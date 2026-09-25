@@ -1,0 +1,15 @@
+# ===== 开发期产物 =====
+# 测试脚本跑出来的截图与临时文件，不进仓库（体积大且每次都会变，
+# 提交它们会让每次 diff 都变成一堆二进制噪声）
+_shots/
+_report_shots/
+_tools/_shots/
+_tools/_report_shots/
+_tools/_tmp_*.js
+_sync.log
+
+# ===== 依赖与系统文件 =====
+node_modules/
+.DS_Store
+Thumbs.db
+desktop.ini

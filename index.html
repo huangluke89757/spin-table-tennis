@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旋转乒乓 · 第一视角 3D</title>
+<style>
+  /* ===== 设计变量：全站配色 / 圆角 / 字号唯一来源，HUD 与浮层共用 ===== */
+  :root {
+    --bg:#080b11;                 /* 舞台底色 */
+    --panel:rgba(10,14,20,0.55);  /* 面板底 */
+    --panel-solid:#0d131c;        /* 面板实底 */
+    --line:rgba(255,255,255,0.08);/* 分隔线 */
+    --line-strong:#30363d;
+    --fg:#e6edf3;                 /* 主文字 */
+    --fg-2:#c9d1d9;               /* 次文字 */
+    --muted:#8b949e;              /* 说明文字 */
+    --dim:#6e7681;                /* 弱提示 */
+    --accent:#ffb454;             /* 主强调：拍面 / 按钮 / 纪录 */
+    --accent-hi:#ffc36e;
+    --ok:#7ee0a8;                 /* 成功 */
+    --bad:#ff7b72;                /* 失败 */
+    /* 球型色：与 game.js 的 SPIN_POOL 保持一致 */
+    --spin-top:#ff8a4c;
+    --spin-back:#4cb8ff;
+    --spin-side:#c07bff;
+    --spin-flat:#e6edf3;
+    --r:10px;                     /* 面板圆角 */
+    --r-s:6px;                    /* 小控件圆角 */
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); }
+  body { font-family: system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
+         color:var(--fg); user-select:none; cursor:default; }
+  #stage { position:relative; width:100%; height:100%; }
+  canvas { display:block; width:100%; height:100%; cursor:crosshair;
+           -webkit-user-select:none; user-select:none;
+           -webkit-tap-highlight-color:transparent; }
+
+  /* ===== HUD ===== */
+  #hud { position:absolute; inset:0; pointer-events:none; z-index:5; }
+  .panel { position:absolute; background:var(--panel); border:1px solid var(--line);
+           border-radius:var(--r); padding:10px 14px; backdrop-filter:blur(6px); }
+  .panel .lbl { font-size:11px; color:var(--muted); }
+  .num { font-variant-numeric:tabular-nums; }
+
+  #hudScore { top:18px; left:18px; min-width:154px; }
+  #hudScore .n { font-size:30px; font-weight:600; line-height:1; letter-spacing:-1px; }
+  #hudScore .best { font-size:12px; color:var(--accent); margin-top:7px; }
+  /* 品牌行：logo + 应用名，压在「连续回球」计数上方。
+     取代原先钉在左下角、opacity 0.30 的水印 —— 那个位置既挡拍面栏，
+     又因为太淡而几乎看不见，等于白占一块地方。放这里则和读数同处一个信息块，
+     玩家一眼就知道自己在玩什么。 */
+  #hudBrand { display:flex; align-items:center; gap:8px; margin-bottom:9px;
+              padding-bottom:9px; border-bottom:1px solid var(--line); }
+  #hudBrand .bn { font-size:14px; font-weight:600; letter-spacing:1px;
+                  color:var(--fg); white-space:nowrap; }
+  #hudBrand .bn i { font-style:normal; color:var(--accent); }
+
+  #hudBall { top:18px; left:50%; transform:translateX(-50%); text-align:center; min-width:136px; }
+  #hudBall .t { font-size:17px; font-weight:600; letter-spacing:2px; }
+  #hudBall .s { font-size:11px; color:var(--muted); margin-top:2px; }
+
+  /* 难度档位从右上角下移 —— 右上角让给外链图标（GitHub / 在线试玩）。
+     图标贴角是通用习惯，档位紧随其下，右边缘形成一竖列，不再互相挤压。 */
+  #hudLevel { top:66px; right:18px; text-align:right; min-width:104px; }
+  #hudLevel .n { font-size:22px; font-weight:600; }
+
+  #hudFace { bottom:18px; left:18px; min-width:250px; }
+  #hudFace .row { display:flex; justify-content:space-between; align-items:center;
+                  font-size:12px; margin-bottom:7px; }
+  #hudFace .mode { font-size:15px; font-weight:600; color:var(--accent); }
+  #bar { position:relative; height:8px; background:rgba(255,255,255,0.10);
+         border-radius:4px; margin:4px 0 6px; }
+  #barMid { position:absolute; left:50%; top:-2px; width:1px; height:12px; background:rgba(255,255,255,0.35); }
+  #barMark { position:absolute; top:-3px; width:4px; height:14px; background:var(--accent);
+             border-radius:2px; transform:translateX(-2px); }
+  #barTxt { font-size:11px; color:var(--muted); text-align:center; }
+
+  /* ===== 辅助 HUD：右下「说明 + 配置」与左下「拍面栏」共用一个显隐开关 =====
+     右下两块用 flex 竖向堆叠，而不是各自写死 bottom 偏移。各自绝对定位时，
+     任何一处内容长高一点就会压到邻居；弹性布局从结构上杜绝重叠，
+     回归里再用 getBoundingClientRect 两两求交做硬断言。
+     显隐状态挂在 #hud 上（ui-collapsed），于是左下拍面栏与右下辅助区一起收放，
+     一条 CSS 规则统管，日后新增辅助面板只需往选择器里补一个 id。 */
+  #hudAux { position:absolute; right:18px; bottom:18px; z-index:6;
+            display:flex; flex-direction:column; align-items:flex-end; gap:8px;
+            pointer-events:none; }
+  #hudAux > * { position:static; pointer-events:auto; }
+
+  #hudKeys { font-size:11px; color:var(--muted); line-height:1.9; text-align:right; }
+  #hudKeys b { color:var(--fg-2); font-weight:500; }
+
+  /* 配置栏：音效开关 + 音量 + 显隐开关同处一个面板 —— 配置类的东西集中成组。
+     收起时只藏配置体（cfgBody / cfgSep），开关按钮留在面板里，收起了也点得开。 */
+  #hudCfg { display:flex; align-items:center; gap:10px; padding:8px 12px; }
+  .cfg-body { display:flex; align-items:center; gap:10px; }
+  .cfg-sep { width:1px; height:16px; background:var(--line); }
+  #hudCfg .vv { font-size:11px; color:var(--muted); min-width:26px; text-align:right;
+                font-variant-numeric:tabular-nums; }
+
+  /* 收起：左下拍面栏 + 右下操作说明 + 配置体一起隐藏；开关按钮不在名单里，永远可见可点 */
+  #hud.ui-collapsed #hudFace,
+  #hud.ui-collapsed #hudKeys,
+  #hud.ui-collapsed #cfgBody,
+  #hud.ui-collapsed #cfgSep { display:none; }
+
+  .mini { background:transparent; color:var(--accent); border:1px solid var(--line-strong);
+          border-radius:var(--r-s); padding:5px 10px; font-size:11px; cursor:pointer;
+          pointer-events:auto; font-family:inherit; }
+  .mini:hover { border-color:var(--accent); }
+  .mini.off { color:var(--dim); }
+  input[type=range] { -webkit-appearance:none; appearance:none; width:96px; height:4px;
+                      background:rgba(255,255,255,0.14); border-radius:2px; pointer-events:auto; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:12px; height:12px;
+                      border-radius:50%; background:var(--accent); cursor:pointer; }
+  input[type=range]::-moz-range-thumb { width:12px; height:12px; border:none;
+                      border-radius:50%; background:var(--accent); cursor:pointer; }
+
+  /* 辅助面板显隐开关：始终钉在右下角 */
+  #btnUiToggle { display:inline-flex; align-items:center; gap:6px;
+                 background:transparent; border:1px solid var(--line-strong); color:var(--muted);
+                 border-radius:var(--r-s); padding:5px 10px; font-size:11px; cursor:pointer;
+                 font-family:inherit; }
+  #btnUiToggle:hover { color:var(--fg); border-color:var(--accent); }
+  #btnUiToggle.off { color:var(--dim); border-color:var(--line); }
+  #btnUiToggle .ar { font-size:9px; opacity:0.8; }
+
+  /* 极窄窗口兜底：操作说明让位给画面（开始页仍能看到完整按键表） */
+  @media (max-width:640px) { #hudKeys { display:none; } }
+
+  #msg { position:absolute; top:30%; left:50%; transform:translateX(-50%);
+         font-size:30px; font-weight:600; text-align:center; white-space:nowrap;
+         text-shadow:0 3px 18px rgba(0,0,0,0.8); }
+  #msgSub { position:absolute; top:calc(30% + 42px); left:50%; transform:translateX(-50%);
+            font-size:14px; text-align:center; color:var(--fg-2); text-shadow:0 2px 10px rgba(0,0,0,0.8); }
+
+  /* ===== 「结算中」过渡层 =====
+     失败后到结束页之间有一段等待（见 game.js 的 SETTLE_WAIT，当前 1.25s）。
+     这段时间原来画面完全静止（只有一行失败文字），观感就是「卡住了」。
+     这里补一段带乒乓球元素的结算动画把空窗填上。
+     位置刻意压在中下部：顶部 30% 处正显示失败原因，不能被盖掉。 */
+  /* 位置压在中下部（top:60%）：顶部 30% 处正显示失败原因，不能被盖掉。
+   * 底衬：结算层会同时落在「亮蓝台面」和「暗背景」上，纯文字在亮蓝上对比不足、
+   * 会糊进背景 —— 加一层半透明深色药丸底衬，任何背景下都能立住。 */
+  #settle { position:absolute; left:50%; top:60%; transform:translateX(-50%);
+            z-index:8; display:none; flex-direction:column; align-items:center;
+            pointer-events:none;
+            padding:22px 34px 20px; border-radius:20px;
+            background:rgba(8,14,24,0.62); backdrop-filter:blur(6px);
+            border:1px solid rgba(255,255,255,0.07);
+            box-shadow:0 12px 40px rgba(0,0,0,0.45);
+            /* 窗口时长由 game.js 的 showSettle() 在运行时写入；1.25s 是兜底默认值
+               （万一 JS 没跑起来，动画也不至于停住） */
+            --settle-wait:1.25s; }
+  #settle.on { display:flex; }
+  #settle .ball-wrap { position:relative; width:56px; height:56px; margin-bottom:16px; }
+  /* 球体：白色圆 + 一道接缝弧，与游戏里那颗球同一套视觉语言 */
+  #settle .ball { position:absolute; inset:0; border-radius:50%;
+                  background:radial-gradient(circle at 34% 30%, #ffffff 0%, #e8ecf2 58%, #c8cfd8 100%);
+                  box-shadow:0 0 22px rgba(255,255,255,0.30), 0 6px 14px rgba(0,0,0,0.45);
+                  animation:stBall 0.62s cubic-bezier(0.5,0,0.5,1) infinite; }
+  #settle .ball::after { content:""; position:absolute; inset:22% 26% 34% 22%;
+                         border-radius:50%; border:2px solid rgba(150,160,175,0.75);
+                         border-color:rgba(150,160,175,0.75) transparent transparent transparent;
+                         transform:rotate(-32deg); }
+  /* 球在桌面上弹跳：起跳时略小略亮、落点处压扁 —— 用 scale 的两段关键帧表达。
+     周期 0.62s ≈ 窗口的一半：1.25s 里正好弹两下，读得出「在动」又不会晃得心烦。 */
+  @keyframes stBall {
+    0%   { transform:translateY(-16px) scale(1.02, 0.98); }
+    50%  { transform:translateY(6px)  scale(1.10, 0.88); }
+    100% { transform:translateY(-16px) scale(1.02, 0.98); }
+  }
+  /* 影子：球弹起时缩小变淡，落下时放大变实 —— 弹跳感的另一半全靠它 */
+  #settle .shadow { position:absolute; left:50%; bottom:-8px; width:40px; height:8px;
+                    margin-left:-20px; border-radius:50%; background:rgba(0,0,0,0.5);
+                    filter:blur(3px); animation:stShadow 0.62s cubic-bezier(0.5,0,0.5,1) infinite; }
+  @keyframes stShadow {
+    0%   { transform:scale(0.62); opacity:0.30; }
+    50%  { transform:scale(1.16); opacity:0.72; }
+    100% { transform:scale(0.62); opacity:0.30; }
+  }
+  #settle .txt { font-size:15px; font-weight:600; letter-spacing:3px; color:#e8eef6;
+                 text-shadow:0 2px 12px rgba(0,0,0,0.85); }
+  #settle .dots i { font-style:normal; animation:stDot 0.7s steps(1,end) infinite; }
+  #settle .dots i:nth-child(2) { animation-delay:0.12s; }
+  #settle .dots i:nth-child(3) { animation-delay:0.24s; }
+  @keyframes stDot { 0%,20% { opacity:0.2; } 30%,100% { opacity:1; } }
+  /* 进度条：走满整个等待窗口，让「还要多久」变得可见。
+     时长读 --settle-wait，与 game.js 的 SETTLE_WAIT 单一来源同步。 */
+  #settle .bar { width:150px; height:4px; margin-top:15px; border-radius:2px;
+                 background:rgba(255,255,255,0.16); overflow:hidden; }
+  #settle .bar i { display:block; height:100%; width:0%; border-radius:2px;
+                   background:linear-gradient(90deg, var(--accent), var(--accent-hi));
+                   animation:stBar var(--settle-wait) linear forwards; }
+  @keyframes stBar { from { width:0%; } to { width:100%; } }
+
+  /* ===== 浮层 ===== */
+  .overlay { position:absolute; inset:0; z-index:20; display:flex; flex-direction:column;
+             align-items:center; justify-content:center; background:rgba(8,11,17,0.94); padding:28px;
+             /* 结束页本轮新增了失败构成与历史榜，小窗口下总高可能超出视口 ——
+                允许纵向滚动，避免内容被裁掉（而不是压缩掉新信息）。 */
+             overflow-y:auto; }
+  .overlay.hidden { display:none; }
+  .overlay h1 { font-size:32px; font-weight:600; letter-spacing:2px; }
+  .overlay h1 span { color:var(--accent); }
+  .overlay .sub { font-size:13px; color:var(--muted); margin:6px 0 22px; letter-spacing:1px; }
+  .btn { background:var(--accent); color:#1a1207; border:none; border-radius:8px; padding:12px 44px;
+         font-size:16px; font-weight:600; cursor:pointer; letter-spacing:1px; font-family:inherit; }
+  .btn:hover { background:var(--accent-hi); }
+  .btn.ghost { background:transparent; color:var(--fg-2); border:1px solid var(--line-strong); margin-left:10px; }
+  .legend { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; max-width:840px; margin-bottom:22px; }
+  .legend .item { background:rgba(255,255,255,0.04); border:1px solid var(--line);
+                  border-radius:9px; padding:11px 10px; text-align:center; }
+  .legend .dot { width:100%; height:6px; border-radius:3px; margin-bottom:8px; }
+  .legend .nm { font-size:14px; font-weight:600; margin-bottom:5px; }
+  .legend .ac { font-size:11px; color:var(--muted); line-height:1.5; }
+  .cols { display:grid; grid-template-columns:auto 1fr; gap:9px 16px; font-size:13px;
+          color:var(--fg-2); margin-bottom:24px; text-align:left; align-items:center; }
+  .cols b, .kb { background:#21262d; border:1px solid var(--line-strong); border-radius:5px;
+                 padding:3px 10px; font-weight:500; font-size:12px; color:var(--accent); white-space:nowrap; }
+  .cols span { line-height:1.7; }
+  .tip { margin-top:20px; font-size:11.5px; color:var(--dim); line-height:1.8; text-align:center; max-width:760px; }
+  #finalStat { font-size:15px; color:var(--muted); margin-bottom:6px; line-height:2.1; text-align:center; }
+  #finalStat em { color:var(--accent); font-style:normal; font-size:30px; font-weight:600; }
+  #finalStat b { color:var(--ok); font-weight:600; font-size:20px; }
+  #uiStreak { color:var(--ok); min-height:14px; }
+  #endReason { font-size:13px; color:var(--bad); margin-bottom:22px; }
+  .settings { display:flex; align-items:center; gap:12px; font-size:12px; color:var(--fg-2);
+              background:rgba(255,255,255,0.04); border:1px solid var(--line);
+              border-radius:var(--r); padding:10px 16px; margin-bottom:6px; }
+  /* 结束页的辅助面板开关：与 .settings 同款外观，放在按钮行下方 */
+  #endUiRow { display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted);
+              background:rgba(255,255,255,0.04); border:1px solid var(--line);
+              border-radius:var(--r); padding:8px 16px; margin-top:14px; }
+
+  /* ===== Logo：游戏界面与海报共用同一形状（SVG 由 poster.js 注入） =====
+     界面上只剩「开始页 / 结束页 / 左上品牌行」三处，不再有左下角水印。 */
+  .logo-svg { display:block; }
+  .brand { display:flex; align-items:center; gap:14px; margin-bottom:8px; }
+  .brand .nm { font-size:38px; font-weight:700; letter-spacing:4px; line-height:1; }
+  .brand .nm span { color:var(--accent); }
+  .brand .en { font-size:11px; color:var(--dim); letter-spacing:3px; margin-top:7px; }
+  #endBrand { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:4px; }
+  #endBrand .nm { font-size:30px; font-weight:600; letter-spacing:2px; }
+  #newBadge { display:none; align-items:center; gap:7px; background:var(--accent); color:#1a1207;
+              border-radius:20px; padding:7px 18px; font-size:13px; font-weight:700;
+              letter-spacing:1px; margin-bottom:14px; }
+  #newBadge.on { display:inline-flex; }
+  #newBadge i { font-style:normal; font-size:11px; opacity:0.7; }
+
+  /* ===== 右上角外链（GitHub / 在线试玩） =====
+     放右上而不是左下：左下已被拍面栏（操作信息）占着，右上原本空着。
+     常态低饱和度、不加底色，hover 才浮出 tooltip —— 它是入口不是装饰，
+     不该和球台抢视线。 */
+  /* z-index 必须高于 .overlay（20）：否则开始页/结束页浮层会把入口盖住 ——
+     而「第一次打开游戏的人」恰恰是最可能去点 Star 的那批人，入口在首页看不见
+     等于没做。它同时是全局常驻元素，跨开始页/对局/结束页都在同一位置。 */
+  #topLinks { position:absolute; right:16px; top:16px; z-index:26;
+              display:flex; align-items:center; gap:6px; pointer-events:auto; }
+  #topLinks a { position:relative; width:34px; height:34px; border-radius:50%;
+                display:flex; align-items:center; justify-content:center;
+                color:var(--muted); background:transparent;
+                border:1px solid transparent; transition:all .18s ease; }
+  #topLinks a:hover { color:var(--fg); background:rgba(255,255,255,0.12);
+                      border-color:var(--line-strong); }
+  #topLinks a svg { width:19px; height:19px; display:block; }
+  /* GitHub 是主入口：常驻一层淡底 + 描边，与次级的「在线试玩」区分开。
+     底不能太淡 —— 太淡就等于入口不存在（实测 0.055 的底在深色场景里几乎看不见）。 */
+  #topLinks a.primary { color:var(--fg); background:rgba(255,255,255,0.10);
+                        border-color:var(--line); }
+  #topLinks a .tt { position:absolute; right:0; top:calc(100% + 10px);
+                    white-space:nowrap; font-size:12.5px; font-weight:650;
+                    color:#1a1207; background:var(--accent);
+                    padding:6px 13px; border-radius:16px;
+                    opacity:0; transform:translateY(-4px); pointer-events:none;
+                    transition:opacity .16s ease, transform .16s ease;
+                    box-shadow:0 8px 24px rgba(0,0,0,0.55); }
+  #topLinks a:hover .tt { opacity:1; transform:translateY(0); }
+  #topLinks a .tt::before { content:""; position:absolute; right:14px; top:-4px;
+                            width:8px; height:8px; background:var(--accent);
+                            transform:rotate(45deg); border-radius:1px; }
+
+  /* ===== 开始页：模式二选一 =====
+     练习 / 挑战的差异刻意只有一处（辅助提示），所以卡片要直白讲清
+     「谁有提示、谁计榜」，而不是让玩家自己猜。 */
+  .modeCards { display:grid; grid-template-columns:1fr 1fr; gap:13px;
+               width:100%; max-width:620px; margin:4px 0 20px; }
+  .modeCard { text-align:left; cursor:pointer; padding:15px 17px;
+              background:rgba(255,255,255,0.035); border:1px solid var(--line);
+              border-radius:var(--r); transition:all .18s ease; font-family:inherit; }
+  .modeCard:hover { border-color:var(--line-strong); background:rgba(255,255,255,0.062); }
+  .modeCard.on { border-color:var(--accent); background:rgba(255,180,84,0.10);
+                 box-shadow:0 0 0 1px rgba(255,180,84,0.30) inset; }
+  .modeCard .mt { font-size:15.5px; font-weight:700; color:var(--fg);
+                  display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+  .modeCard .mt i { font-style:normal; font-size:10.5px; font-weight:700;
+                    padding:2px 7px; border-radius:4px;
+                    background:rgba(255,255,255,0.09); color:var(--muted); }
+  .modeCard.on .mt i { background:var(--accent); color:#1a1207; }
+  .modeCard .md { font-size:12.5px; color:var(--muted); line-height:1.7; }
+  .modeCard .md b { color:var(--fg-2); }
+  @media(max-width:640px){ .modeCards{ grid-template-columns:1fr; } }
+
+  /* ===== 结束页：模式标签 / 进步幅度 / 失败构成 / 历史榜 ===== */
+  .modeTag { font-size:11.5px; font-weight:700; letter-spacing:0.6px;
+             padding:3px 12px; border-radius:20px; margin-bottom:11px; }
+  .modeTag.ranked { background:rgba(255,180,84,0.16); color:var(--accent);
+                    border:1px solid rgba(255,180,84,0.40); }
+  .modeTag.practice { background:rgba(255,255,255,0.07); color:var(--muted);
+                      border:1px solid var(--line); }
+
+  /* 距个人最佳：把「我到底有没有进步」变成一个具体数字 */
+  #endGap { font-size:14px; color:var(--fg-2); margin:11px 0 2px; letter-spacing:0.3px; }
+  #endGap b { color:var(--accent); font-size:17px; font-variant-numeric:tabular-nums; }
+  #endGap.isNew b { color:var(--ok); }
+
+  /* 失败构成：横向条 + 次数，最大项加粗描边 */
+  #failWrap { width:100%; max-width:400px; margin:15px auto 0; text-align:left; }
+  #failMain { font-size:13px; color:var(--muted); margin-bottom:10px; text-align:center; }
+  #failMain b { color:var(--bad); }
+  .fbRow { display:grid; grid-template-columns:76px 1fr 48px; align-items:center;
+           gap:10px; margin:5px 0; font-size:12.5px; }
+  .fbRow .fbName { color:var(--muted); }
+  .fbRow.isTop .fbName { color:var(--fg); font-weight:650; }
+  .fbRow .fbBar { height:6px; border-radius:3px; background:rgba(255,255,255,0.07);
+                  overflow:hidden; }
+  .fbRow .fbBar i { display:block; height:100%; border-radius:3px;
+                    background:rgba(255,123,114,0.55); }
+  .fbRow.isTop .fbBar i { background:var(--bad); }
+  .fbRow .fbNum { text-align:right; color:var(--muted); }
+  .fbRow.isTop .fbNum { color:var(--fg); }
+
+  /* 历史榜：只列挑战模式成绩；本局高亮 */
+  #boardWrap { width:100%; max-width:400px; margin:15px auto 0; text-align:left; }
+  #boardTitle { font-size:12px; color:var(--dim); letter-spacing:1px;
+                margin-bottom:7px; text-align:center; }
+  .bdRow { display:grid; grid-template-columns:20px 58px 1fr auto; align-items:center;
+           gap:9px; padding:5px 8px; border-radius:6px; font-size:12.5px;
+           color:var(--muted); }
+  .bdRow.isCur { background:rgba(255,180,84,0.13); color:var(--fg);
+                 box-shadow:0 0 0 1px rgba(255,180,84,0.30) inset; }
+  .bdRow .bdRank { color:var(--dim); font-weight:700; }
+  .bdRow.isCur .bdRank { color:var(--accent); }
+  .bdRow .bdMain { color:var(--fg-2); font-weight:650; }
+  .bdRow.isCur .bdMain { color:var(--accent); }
+  .bdRow .bdSub { font-size:11.5px; }
+  .bdRow .bdTime { font-size:11px; color:var(--dim); }
+  .boardEmpty { font-size:12.5px; color:var(--dim); line-height:1.85;
+                text-align:center; padding:8px 0; }
+  .boardEmpty b { color:var(--accent); }
+
+  /* ===== 分享海报浮层 ===== */
+  #posterScreen { background:rgba(6,9,14,0.97); }
+  #posterWrap { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
+                min-height:0; width:100%; padding:6px 0; }
+  #posterCv { max-width:min(430px, 92vw); max-height:100%; border-radius:12px;
+              box-shadow:0 18px 60px rgba(0,0,0,0.65); display:block; }
+  #posterBtns { display:flex; align-items:center; gap:12px; margin-top:18px; flex:0 0 auto; }
+  #posterHint { font-size:11.5px; color:var(--dim); margin-top:12px; text-align:center; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+
+  <!-- 右上角外链：GitHub 仓库（主入口，hover 出「给项目点个 Star」）+ 在线试玩。
+       必须放在 #hud **之外**：#hud 自身有 z-index:5，会形成层叠上下文，
+       子元素无论设多高的 z-index 都跳不出这个上下文，会被开始页浮层（z-index:20）
+       盖住 —— 而新访客恰恰就是停在开始页的那批人。 -->
+  <div id="topLinks">
+    <a id="ghLink" class="primary" target="_blank" rel="noopener"
+       href="https://github.com/huangluke89757/spin-table-tennis" aria-label="GitHub 仓库">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      <span class="tt">给项目点个 Star ⭐</span>
+    </a>
+    <a id="siteLink" target="_blank" rel="noopener"
+       href="https://spin-pingpong.app.workbuddy.host/" aria-label="在线试玩">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.9 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.9-3.8-9S9.5 5.7 12 3z"/></svg>
+      <span class="tt">在线试玩</span>
+    </a>
+  </div>
+
+  <div id="hud">
+    <div class="panel" id="hudScore">
+      <div id="hudBrand">
+        <span data-logo="26"></span>
+        <div class="bn">旋转<i>乒乓</i></div>
+      </div>
+      <div class="n num" id="uiRally">0</div>
+      <div class="lbl">连续回球</div>
+      <div class="best">得分 <span class="num" id="uiScore">0</span>　最佳 <span class="num" id="uiBest">0</span></div>
+      <div class="best" id="uiStreak"></div>
+    </div>
+
+    <div class="panel" id="hudBall">
+      <div class="t" id="uiType">—</div>
+      <div class="s" id="uiTypeSub">等待发球</div>
+    </div>
+
+    <div class="panel" id="hudLevel">
+      <div class="n num" id="uiLevel">1</div>
+      <div class="lbl">难度档</div>
+    </div>
+
+    <div class="panel" id="hudFace">
+      <div class="row"><span class="mode" id="uiMode">正手</span><span id="uiAssist">辅助 开</span></div>
+      <div id="bar"><div id="barMid"></div><div id="barMark"></div></div>
+      <div id="barTxt">拍面中立</div>
+    </div>
+
+    <div id="hudAux">
+      <div class="panel" id="hudKeys">
+        <b>按住拖动 → 松手击球</b>　<b>拖动速度</b> 力量<br>
+        <b>拖动方向</b> 线路　<b>落点尽量贴环</b> 判「好球」<br>
+        <b>滚轮 · A D</b> 拍面　<b>Shift</b> 正反手<br>
+        <b>Esc · P</b> 暂停　<b>H</b> 辅助　<b>M</b> 静音　<b>R</b> 重开　<b>Tab</b> 收起辅助
+      </div>
+
+      <div class="panel" id="hudCfg">
+        <div class="cfg-body" id="cfgBody">
+          <button class="mini" id="btnMute">音效 开</button>
+          <input id="volRange" type="range" min="0" max="100" step="1" value="70">
+          <span class="vv" id="volTxt">70</span>
+        </div>
+        <div class="cfg-sep" id="cfgSep"></div>
+        <button id="btnUiToggle" title="收起 / 展开辅助面板（拍面栏 + 操作说明 + 配置栏）（Tab）">
+          <span class="ar">▼</span><span id="uiToggleTxt">收起辅助</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="msg"></div>
+    <div id="msgSub"></div>
+
+    <div id="settle">
+      <div class="ball-wrap">
+        <div class="ball"></div>
+        <div class="shadow"></div>
+      </div>
+      <div class="txt">结算中<span class="dots"><i>.</i><i>.</i><i>.</i></span></div>
+      <div class="bar"><i></i></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="startScreen">
+    <div class="brand"><span data-logo="62"></span>
+      <div><div class="nm">旋转<span>乒乓</span></div>
+        <div class="en">SPIN TABLE TENNIS · FIRST-PERSON</div></div>
+    </div>
+    <div class="sub">判断旋转 · 调整拍面 · 第一视角回击</div>
+    <div class="legend">
+      <div class="item"><div class="dot" style="background:var(--spin-top)"></div>
+        <div class="nm">上旋</div><div class="ac">弧线下坠快<br>落台前冲</div></div>
+      <div class="item"><div class="dot" style="background:var(--spin-back)"></div>
+        <div class="nm">下旋</div><div class="ac">弧线较高<br>落台弹跳低</div></div>
+      <div class="item"><div class="dot" style="background:var(--spin-side)"></div>
+        <div class="nm">左侧旋</div><div class="ac">空中左弯<br>落台左跳</div></div>
+      <div class="item"><div class="dot" style="background:var(--spin-side)"></div>
+        <div class="nm">右侧旋</div><div class="ac">空中右弯<br>落台右跳</div></div>
+      <div class="item"><div class="dot" style="background:var(--spin-flat)"></div>
+        <div class="nm">直线快球</div><div class="ac">轨迹平直<br>反应时间短</div></div>
+    </div>
+    <div class="cols">
+      <b>鼠标拖动</b><span>拖动<b>方向</b>决定回球线路（左 / 中 / 右），拖动<b>速度</b>决定力量</span>
+      <b>松开时机</b><span>球外光环缩到最小那一刻松手＝最佳击球点</span>
+      <b>滚轮 / A · D</b><span>调整拍面角度：接上旋要<b>压拍</b>，搓下旋要<b>亮拍</b></span>
+      <b>Shift</b><span>切换正手 / 反手，击球动作随之变化</span>
+      <b>Tab</b><span>收起 / 展开底部辅助面板（操作说明与音效栏），专注看球</span>
+    </div>
+    <div class="modeCards">
+      <div class="modeCard on" id="modePractice" role="button" tabindex="0">
+        <div class="mt">练习模式<i>推荐新手</i></div>
+        <div class="md">辅助提示<b>默认开启</b>：看得出球型、旋转箭头与预测落点。<br>
+          成绩<b>不计入排行榜</b>，随时按 H 关掉提示。</div>
+      </div>
+      <div class="modeCard" id="modeChallenge" role="button" tabindex="0">
+        <div class="mt">挑战模式<i>计榜</i></div>
+        <div class="md">辅助提示<b>强制关闭</b>，只能靠弧线与落点判断旋转。<br>
+          成绩<b>计入历史前十与每档最佳</b>，海报可标「新纪录」。</div>
+      </div>
+    </div>
+    <button class="btn" id="startBtn">开始对局</button>
+    <div class="tip">任一一球失败即本局结束，成绩＝连续回球数　·　回球越多球速与旋转越强，第 8 档封顶<br>
+      每局约 <b>1/4</b> 是旋转球，其余是慢速好接球　·　球落在黄圈内且时机准 → 判 <b>好球</b> 得额外加分<br>
+      辅助提示默认开启：显示来球类型、旋转箭头与预测落点；按 H 可关闭，关闭后只能靠弧线判断</div>
+  </div>
+
+  <div class="overlay hidden" id="pauseScreen">
+    <h1>已暂停</h1>
+    <div class="sub">来球飞行与计时已挂起</div>
+    <div class="cols">
+      <b>滚轮 / A · D</b><span>拍面角度：压拍（接上旋）／亮拍（搓下旋）</span>
+      <b>鼠标拖动</b><span>方向＝回球线路，速度＝力量</span>
+      <b>Shift</b><span>正手 / 反手切换</span>
+      <b>H</b><span>旋转辅助提示开关</span>
+      <b>Tab</b><span>底部辅助面板显隐</span>
+    </div>
+    <div class="settings">
+      <span>音效</span>
+      <button class="mini" id="btnMute2">音效 开</button>
+      <input id="volRange2" type="range" min="0" max="100" step="1" value="70">
+      <span class="vv" id="volTxt2">70</span>
+    </div>
+    <div><button class="btn" id="resumeBtn">继续</button><button class="btn ghost" id="quitBtn">结束本局</button></div>
+  </div>
+
+  <div class="overlay hidden" id="endScreen">
+    <div id="endBrand"><span data-logo="34"></span><div class="nm">旋转乒乓</div></div>
+    <div class="sub">连续回球 · 落点得分</div>
+    <div id="newBadge">新纪录 NEW RECORD <i>超越上次 <span id="uiPrevBest">0</span> 分</i></div>
+    <div id="finalStat">本局连续回球 <em class="num" id="uiFinal">0</em> 拍　·　得分 <b class="num" id="uiScore2">0</b></div>
+    <div id="endReason"></div>
+    <div class="modeTag practice" id="endMode">练习模式 · 不计入排行榜</div>
+    <div id="endGap"></div>
+    <!-- 失败构成：把「系统知道但玩家看不到」的信息摊开。无数据时由 JS 整块隐藏 -->
+    <div id="failWrap" style="display:none">
+      <div id="failMain"></div>
+      <div id="failList"></div>
+    </div>
+    <!-- 历史前十（仅挑战模式）。无历史时由 JS 整块隐藏 -->
+    <div id="boardWrap" style="display:none">
+      <div id="boardTitle"></div>
+      <div id="boardList"></div>
+    </div>
+    <div><button class="btn" id="againBtn">再来一局</button><button class="btn ghost" id="posterBtn">分享海报</button></div>
+    <div id="endUiRow">
+      <span>辅助面板（拍面栏 + 操作说明 + 音效配置）</span>
+      <button class="mini" id="btnUiToggle2">显示</button>
+    </div>
+    <div class="tip" id="endTip"></div>
+  </div>
+
+  <div class="overlay hidden" id="posterScreen">
+    <div id="posterWrap"><canvas id="posterCv"></canvas></div>
+    <div id="posterBtns">
+      <button class="btn" id="savePosterBtn">保存图片</button>
+      <button class="btn ghost" id="closePosterBtn">返回</button>
+    </div>
+    <div id="posterHint">破纪录才会生成高光海报　·　取本局分值最高的三次落台瞬间</div>
+  </div>
+
+  <div class="overlay hidden" id="errScreen">
+    <h1>无法启动 3D</h1>
+    <div class="sub" id="errMsg"></div>
+    <div class="tip">请用支持 WebGL 的桌面浏览器（Chrome / Edge / Firefox）打开，并确认显卡驱动正常。</div>
+  </div>
+</div>
+
+<script src="vendor/three.min.js?v=b19adf21"></script>
+<script src="poster.js?v=b19adf21"></script>
+<script src="game.js?v=b19adf21"></script>
+</body>
+</html>

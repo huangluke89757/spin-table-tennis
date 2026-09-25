@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 448" width="900" height="448" role="img" aria-label="旋转乒乓 核心循环与三层可信度">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b949e"/>
+    </marker>
+    <marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ffb454"/>
+    </marker>
+    <linearGradient id="acc" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ffb454"/><stop offset="100%" stop-color="#ffc36e"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="448" rx="14" fill="#0b1017"/>
+  <rect x="0.5" y="0.5" width="899" height="447" rx="14" fill="none" stroke="rgba(255,255,255,0.10)"/>
+
+  <!-- ===== 上半：核心循环 ===== -->
+  <text x="40" y="46" fill="#e6edf3" font-size="17" font-weight="700" font-family="system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">核心循环：一次来回里的四个判断</text>
+  <text x="40" y="68" fill="#8b949e" font-size="12.5" font-family="system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">难点不在手速，在「先看清是什么旋转，再决定拍面怎么摆」</text>
+
+  <!-- 四个步骤框 -->
+  <g font-family="system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+    <rect x="40" y="92" width="175" height="66" rx="10" fill="rgba(255,255,255,0.045)" stroke="rgba(255,255,255,0.13)"/>
+    <text x="127" y="118" fill="#ff8a4c" font-size="14.5" font-weight="700" text-anchor="middle">1 判断旋转</text>
+    <text x="127" y="140" fill="#8b949e" font-size="11.5" text-anchor="middle">上旋 / 下旋 / 侧旋</text>
+
+    <rect x="255" y="92" width="175" height="66" rx="10" fill="rgba(255,255,255,0.045)" stroke="rgba(255,255,255,0.13)"/>
+    <text x="342" y="118" fill="#ffb454" font-size="14.5" font-weight="700" text-anchor="middle">2 调整拍面</text>
+    <text x="342" y="140" fill="#8b949e" font-size="11.5" text-anchor="middle">压拍 / 亮拍 / 中立</text>
+
+    <rect x="470" y="92" width="175" height="66" rx="10" fill="rgba(255,255,255,0.045)" stroke="rgba(255,255,255,0.13)"/>
+    <text x="557" y="118" fill="#7ee0a8" font-size="14.5" font-weight="700" text-anchor="middle">3 拖动击球</text>
+    <text x="557" y="140" fill="#8b949e" font-size="11.5" text-anchor="middle">方向 = 线路，速度 = 力量</text>
+
+    <rect x="685" y="92" width="175" height="66" rx="10" fill="rgba(255,255,255,0.045)" stroke="rgba(255,255,255,0.13)"/>
+    <text x="772" y="118" fill="#4cb8ff" font-size="14.5" font-weight="700" text-anchor="middle">4 落点结算</text>
+    <text x="772" y="140" fill="#8b949e" font-size="11.5" text-anchor="middle">离黄圈越近分越高</text>
+  </g>
+
+  <!-- 横向箭头 -->
+  <g stroke="#8b949e" stroke-width="1.6" marker-end="url(#ar)">
+    <line x1="219" y1="125" x2="249" y2="125"/>
+    <line x1="434" y1="125" x2="464" y2="125"/>
+    <line x1="649" y1="125" x2="679" y2="125"/>
+  </g>
+
+  <!-- 回环：失败复盘 -->
+  <path d="M 772 162 L 772 196 L 127 196 L 127 164" fill="none" stroke="#ffb454" stroke-width="1.6"
+        stroke-dasharray="5 4" marker-end="url(#arA)"/>
+  <rect x="352" y="182" width="196" height="28" rx="8" fill="#0b1017"/>
+  <text x="450" y="201" fill="#ffb454" font-size="13" font-weight="700" text-anchor="middle"
+        font-family="system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">5 失败复盘 · 告诉你为什么输</text>
+
+  <!-- 分隔线 -->
+  <line x1="40" y1="240" x2="860" y2="240" stroke="rgba(255,255,255,0.10)"/>
+
+  <!-- ===== 下半：三层可信度 ===== -->
+  <text x="40" y="274" fill="#e6edf3" font-size="17" font-weight="700" font-family="system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">三层可信度 —— 竞品普遍缺的那部分</text>
+
+  <g font-family="system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+    <!-- 第 1 层 -->
+    <rect x="40" y="292" width="820" height="44" rx="9" fill="rgba(255,180,84,0.10)" stroke="rgba(255,180,84,0.30)"/>
+    <text x="60" y="319" fill="#ffb454" font-size="13.5" font-weight="700">物理内核</text>
+    <text x="164" y="319" fill="#c9d1d9" font-size="12.5">马格努斯力 + 空气阻力 + 重力，自写求解器 · 61 项物理回归 · 4320 条数值一致性逐位零差异</text>
+
+    <!-- 第 2 层 -->
+    <rect x="40" y="344" width="820" height="44" rx="9" fill="rgba(126,224,168,0.09)" stroke="rgba(126,224,168,0.28)"/>
+    <text x="60" y="371" fill="#7ee0a8" font-size="13.5" font-weight="700">判定可信</text>
+    <text x="164" y="371" fill="#c9d1d9" font-size="12.5">同一拍必判同一结果，不靠随机数兜底 —— 这是玩家最集中的差评点，也是本项目最硬的差异</text>
+
+    <!-- 第 3 层 -->
+    <rect x="40" y="396" width="820" height="44" rx="9" fill="rgba(255,123,114,0.09)" stroke="rgba(255,123,114,0.28)"/>
+    <text x="60" y="423" fill="#ff7b72" font-size="13.5" font-weight="700">失败归因</text>
+    <text x="164" y="423" fill="#c9d1d9" font-size="12.5">吃旋转 / 拍面偏差 / 时机早或晚 / 力量与落点 / 没打到球 —— 五类可分桶统计，而不是只说「你输了」</text>
+  </g>
+</svg>
