@@ -197,6 +197,58 @@ async function probeFeatures(p) {
         return getComputedStyle(bar).animationDuration;
       })(),
     };
+    /* ⑥ 本轮新增：右上角外链 / 双模式 / 失败归因 / 纪录系统
+     * 同样必须读**线上实际产物**：版本戳只覆盖三个 JS 文件，index.html 的改动
+     * 不会换 URL，CDN 完全可能继续发旧 HTML —— 那样新功能在线上根本不存在。 */
+    const tl = document.getElementById("topLinks");
+    const gh = document.getElementById("ghLink");
+    const tt = gh ? gh.querySelector(".tt") : null;
+    out.links = {
+      wrap: !!tl,
+      ghHref: gh ? gh.href : "",
+      tip: tt ? tt.textContent : "",
+      /* 入口必须在 #hud **之外**：#hud 有 z-index:5，会形成层叠上下文，
+       * 子元素无论多高的 z-index 都跳不出去，会被开始页浮层（z-index:20）盖住，
+       * 而第一次打开游戏的人恰恰停在开始页。 */
+      outsideHud: !!tl && !!document.getElementById("hud") &&
+                  !document.getElementById("hud").contains(tl),
+      zIndex: tl ? parseInt(getComputedStyle(tl).zIndex, 10) || 0 : 0,
+    };
+    out.modes = {
+      cards: document.querySelectorAll(".modeCard").length,
+      hasPractice: !!document.getElementById("modePractice"),
+      hasChallenge: !!document.getElementById("modeChallenge"),
+      /* 点一下挑战卡片，G.mode 与 G.assist 都要跟着变（点完复原，不干扰后续） */
+      afterClick: (() => {
+        const c = document.getElementById("modeChallenge");
+        const p = document.getElementById("modePractice");
+        if (!c || !p) return null;
+        c.click();
+        const r = { mode: G.mode, assist: G.assist };
+        p.click();                                 // 复原为练习模式
+        return r;
+      })(),
+    };
+    out.diag = {
+      endMode: !!document.getElementById("endMode"),
+      endGap: !!document.getElementById("endGap"),
+      failWrap: !!document.getElementById("failWrap"),
+      failList: !!document.getElementById("failList"),
+      boardWrap: !!document.getElementById("boardWrap"),
+      boardList: !!document.getElementById("boardList"),
+      classify: typeof classifyFail === "function"
+        ? classifyFail("出界", "吃旋转！上旋球要压拍") : null,
+      /* 纪录系统串起来跑一次真流程：写一局 → 读回来校验 → 清干净 */
+      roundTrip: (() => {
+        if (typeof clearRecords !== "function" || typeof commitResult !== "function") return null;
+        clearRecords();
+        commitResult({ rally: 11, score: 77, level: 2, mode: "challenge", good: 5, ts: 1 });
+        const r = loadRecords();
+        const ok = r.history.length === 1 && r.best.challenge === 11 && r.score.challenge === 77;
+        clearRecords();
+        return ok;
+      })(),
+    };
     return out;
   });
 }
@@ -204,6 +256,7 @@ async function probeFeatures(p) {
 /* 判据：每条都要求线上产物真的带本轮改动 */
 function judgeFeatures(f) {
   const s = f.shot, n = f.net, r = f.racket, b = f.brand, st = f.settle;
+  const lk = f.links || {}, md = f.modes || {}, dg = f.diag || {};
   const items = [
     ["离屏抓帧：抓帧期间主渲染器调用次数为 0", !!s && s.mainRenderCalls === 0,
      s && !s.err ? "mainRender calls=" + s.mainRenderCalls : (s && s.err) || "探针失败"],
@@ -227,6 +280,31 @@ function judgeFeatures(f) {
      "线上 --settle-wait=" + (st.wait || "（读不到）") + "（期望 1.25s，原 2.5s）"],
     ["进度条时长读 CSS 变量、与结算窗口一致", /^1\.25s$/.test(st.barUsesVar || ""),
      "线上 stBar animation-duration=" + (st.barUsesVar || "（读不到）") + "（期望 1.25s，与 --settle-wait 同源）"],
+
+    /* ---- 本轮新增：右上角入口 / 双模式 / 失败归因 / 纪录系统 ---- */
+    ["右上角 GitHub 入口指向本项目仓库（CDN 没返回旧 index.html）",
+     lk.wrap && lk.ghHref === "https://github.com/huangluke89757/spin-table-tennis",
+     "href=" + (lk.ghHref || "缺失")],
+    ["GitHub 入口带「给项目点个 Star」提示文案",
+     (lk.tip || "").indexOf("Star") >= 0, "tooltip=「" + (lk.tip || "缺失") + "」"],
+    ["外链入口在 #hud 之外且层级高于浮层（开始页也看得见）",
+     lk.outsideHud && lk.zIndex > 20,
+     "outsideHud=" + lk.outsideHud + "　z-index=" + lk.zIndex],
+    ["开始页有模式二选一卡片（练习 / 挑战）",
+     md.cards === 2 && md.hasPractice && md.hasChallenge, "卡片 " + md.cards + " 张"],
+    ["选挑战模式后强制关闭辅助（线上真实行为，非仅 DOM 存在）",
+     !!md.afterClick && md.afterClick.mode === "challenge" && md.afterClick.assist === false,
+     md.afterClick ? ("mode=" + md.afterClick.mode + "　assist=" + md.afterClick.assist)
+                   : "点击无响应"],
+    ["结束页新信息容器齐备（模式标签 / 距最佳 / 失败构成 / 历史榜）",
+     dg.endMode && dg.endGap && dg.failWrap && dg.failList && dg.boardWrap && dg.boardList,
+     "endMode=" + dg.endMode + " endGap=" + dg.endGap + " failList=" + dg.failList
+     + " boardList=" + dg.boardList],
+    ["失败归因函数在线上可用且归类正确",
+     dg.classify === "吃旋转",
+     "classifyFail('出界','吃旋转！上旋球要压拍') = " + dg.classify],
+    ["纪录系统线上读写往返正确（写 1 局 → 读回历史与最佳）",
+     dg.roundTrip === true, "commitResult → loadRecords → 校验 " + dg.roundTrip],
   ];
   const bad = items.filter(i => !i[1]);
   items.forEach(i => console.log("   " + (i[1] ? "PASS" : "FAIL") + "  " + i[0] + "　→ " + i[2]));
@@ -272,7 +350,7 @@ function judgeFeatures(f) {
   console.log("");
   console.log("线上地址    :", URL);
   console.log("结论        :", good
-    ? (okAt === 1 ? "PASS 线上产物含全部已交付改动（离屏抓帧零主渲染 + 球网 ITTF + 球拍真实尺寸 + 品牌行 + 结算动画 / 1.25s 窗口）"
+    ? (okAt === 1 ? "PASS 线上产物含全部已交付改动（离屏抓帧零主渲染 + 球网 ITTF + 球拍真实尺寸 + 品牌行 + 结算动画 / 1.25s 窗口 + 双模式 + 失败归因 + 历史榜 + GitHub 入口）"
                   : "PASS 线上正常（第 " + okAt + " 次成功 —— 前几次命中了 CDN 旧缓存节点，非代码问题）")
     : "FAIL 连续 " + TRIES + " 次均失败，需排查");
   process.exit(good ? 0 : 1);
