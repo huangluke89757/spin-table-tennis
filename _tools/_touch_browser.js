@@ -134,21 +134,30 @@ const INSTALL = () => {
     ok("计算样式确认 body touch-action=none", cdpR.bodyTa === "none", "body=" + cdpR.bodyTa);
     ok("平板横屏 → 引导层不显示（可正常游玩）", cdpR.hintOn === false);
 
-    /* 1b. 双区手势真的能把球打回去 */
-    let rallies = 0, attempts = 0, cancels = 0;
-    for (let k = 0; k < 8; k++) {
-      if (!(await fresh(page, 3000))) break;
-      await page.evaluate(() => { G.paddleAngle = correctTiltFor(G.spin); });
-      const before = await page.evaluate(() => G.rally);
-      const g = await page.evaluate(() => window.__simGesture({ x: 620, y: 320, dx: 0, dy: -150, steps: 6 }));
-      await page.waitForTimeout(280);
-      const after = await page.evaluate(() => ({ rally: G.rally, hitDone: G.hitDone, msg: G.msg }));
-      attempts++;
-      if (after.rally > before) rallies++;
-      if (g && g.ok) cancels += 0;
+    /* 1b. 双区手势真的能把球打回去
+     * 两条稳健性设计，都是踩坑加的：
+     * ① 断言必须测「真被识别为击球」（hitDone 置位过）。原来写的是 attempts > 0，
+     *    而循环至少进一次 → 恒真，等于没测（这类假断言比没有更危险）。
+     * ② headless SwiftShader 与别的浏览器实例抢 GPU 时会掉帧，手势的 rAF 节奏被拉长，
+     *    整轮 0 命中。这是环境抖动不是功能坏（单独跑稳定 8/8），所以重试一轮再判，
+     *    避免并行跑回归时出现假红。 */
+    let rallies = 0, hits = 0, attempts = 0;
+    for (let round = 0; round < 2 && hits === 0; round++) {
+      if (round) { await page.evaluate(() => restart()); await page.waitForTimeout(420); }
+      for (let k = 0; k < 8; k++) {
+        if (!(await fresh(page, 4000))) break;
+        await page.evaluate(() => { G.paddleAngle = correctTiltFor(G.spin); });
+        const before = await page.evaluate(() => G.rally);
+        await page.evaluate(() => window.__simGesture({ x: 620, y: 320, dx: 0, dy: -150, steps: 6 }));
+        await page.waitForTimeout(280);
+        const after = await page.evaluate(() => ({ rally: G.rally, hitDone: G.hitDone }));
+        attempts++;
+        if (after.hitDone) hits++;
+        if (after.rally > before) rallies++;
+      }
     }
-    ok("右区触摸挥拍被识别为有效击球（hitDone 置位）",
-       attempts > 0, "尝试 " + attempts + " 次");
+    ok("右区触摸挥拍被识别为有效击球（hitDone 真的置位过）",
+       hits > 0, "识别 " + hits + "/" + attempts + " 次");
     ok("触摸手势能真的得分（连续回球增长）", rallies > 0,
        rallies + "/" + attempts + " 次成功回球得分");
 
@@ -185,6 +194,51 @@ const INSTALL = () => {
     ok("平板横屏下控制簇真实渲染（display:flex 且有尺寸）",
        ctl.display === "flex" && ctl.w > 0 && ctl.h > 0,
        "display=" + ctl.display + " " + ctl.w + "×" + ctl.h);
+
+    /* 1e. 控制簇不得压住球的下落走廊
+     * 这条是本轮抓到的真 bug：控制簇最初放屏幕底部居中，而第一视角下球飞到身前时
+     * 恰好投影在屏幕下方中央 —— 实测与球的可见走廊重叠，玩家会看着球被按钮盖住。
+     * 屏幕四角已被 HUD 占满，最终把它挪到右下角。这里用「球的屏幕投影轨迹」
+     * 与控制簇包围盒求交，锁死这个约束，避免以后挪回去又退化。 */
+    await page.evaluate(() => restart());
+    await page.waitForTimeout(360);
+    const corridor = await page.evaluate(() => new Promise(res => {
+      const samples = [];
+      const t0 = Date.now();
+      const w = () => {
+        if (G.phase === "incoming" && G.ball) {
+          const v = new THREE.Vector3(G.ball.x, G.ball.y, G.ball.z).project(CAM);
+          samples.push({ z: G.ball.z,
+                         x: (v.x * 0.5 + 0.5) * innerWidth,
+                         y: (-v.y * 0.5 + 0.5) * innerHeight });
+        }
+        if ((G.phase !== "incoming" && samples.length > 5) || Date.now() - t0 > 5000) return res(samples);
+        requestAnimationFrame(w);
+      };
+      w();
+    }));
+    /* 只看「球已进入近身可见区」的样本（z ≤ 1.2）。
+     * 别用「全程不出屏」当判据：远球（z > 1.4）本来就在画面外——
+     * 第一视角下球从远处飞来是**从屏幕下方进入**画面，近身段才是玩家必须看清的区间。
+     * 初版把边界卡在全程，2 个远球样本假红，是断言写错而不是功能问题。 */
+    const vis = corridor.filter(s => s.z > 0.3 && s.z <= 1.2);
+    const outside = vis.filter(s =>
+      s.x < 0 || s.x > 900 || s.y < 0 || s.y > 420).length;
+    ok("球在近身可见段（z≤1.2）确实落在画面内（探针有效，不是空集）",
+       vis.length >= 3 && outside === 0,
+       "样本 " + vis.length + " 个，出屏 " + outside + " 个");
+    /* 控制簇在右下角，球的近身走廊在中央偏右下：水平区间必须分离（留 20px 余量）。
+     * 这是本轮抓到的真 bug —— 控制簇最初放屏幕底部居中，正好压住球的落点区。 */
+    const fy = await page.evaluate(() => {
+      const r = document.getElementById("touchCtl").getBoundingClientRect();
+      return { l: r.left, t: r.top, r: r.right, b: r.bottom };
+    });
+    const near = corridor.filter(s => s.z > 0.3 && s.z <= 1.2);
+    const cMinX = Math.min(...near.map(s => s.x)), cMaxX = Math.max(...near.map(s => s.x));
+    const overlap = !(cMaxX < fy.l - 20 || cMinX > fy.r + 20);
+    ok("控制簇不侵入球的下落走廊（水平方向分离 ≥20px）", !overlap,
+       "球走廊 x[" + Math.round(cMinX) + "," + Math.round(cMaxX) + "]  控制簇 x[" +
+       Math.round(fy.l) + "," + Math.round(fy.r) + "]");
 
     await ctx.close();
   }
