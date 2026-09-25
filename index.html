@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>旋转乒乓 · 第一视角 3D</title>
 <style>
   /* ===== 设计变量：全站配色 / 圆角 / 字号唯一来源，HUD 与浮层共用 ===== */
@@ -30,16 +30,17 @@
   }
 
   * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); }
+  html, body { width:100%; height:100%; overflow:hidden; background:var(--bg);
+               overscroll-behavior:none; touch-action:none; }
   body { font-family: system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
          color:var(--fg); user-select:none; cursor:default; }
   #stage { position:relative; width:100%; height:100%; }
   canvas { display:block; width:100%; height:100%; cursor:crosshair;
            -webkit-user-select:none; user-select:none;
-           -webkit-tap-highlight-color:transparent; }
+           -webkit-tap-highlight-color:transparent; touch-action:none; }
 
   /* ===== HUD ===== */
-  #hud { position:absolute; inset:0; pointer-events:none; z-index:5; }
+  #hud { position:absolute; inset:0; pointer-events:none; z-index:5; touch-action:none; }
   .panel { position:absolute; background:var(--panel); border:1px solid var(--line);
            border-radius:var(--r); padding:10px 14px; backdrop-filter:blur(6px); }
   .panel .lbl { font-size:11px; color:var(--muted); }
@@ -89,7 +90,8 @@
             pointer-events:none; }
   #hudAux > * { position:static; pointer-events:auto; }
 
-  #hudKeys { font-size:11px; color:var(--muted); line-height:1.9; text-align:right; }
+  #hudKeys { font-size:11px; color:var(--muted); line-height:1.9; text-align:right;
+            pointer-events:none; }
   #hudKeys b { color:var(--fg-2); font-weight:500; }
 
   /* 配置栏：音效开关 + 音量 + 显隐开关同处一个面板 —— 配置类的东西集中成组。
@@ -127,7 +129,10 @@
   #btnUiToggle.off { color:var(--dim); border-color:var(--line); }
   #btnUiToggle .ar { font-size:9px; opacity:0.8; }
 
-  /* 极窄窗口兜底：操作说明让位给画面（开始页仍能看到完整按键表） */
+  /* 触屏设备（无键盘）隐藏键盘操作说明——它描述的是鼠标/键盘操作，对触屏无意义；
+     开始页浮层里仍有完整按键表，不影响了解。桌面（fine pointer）保留。 */
+  @media (pointer:coarse) { #hudKeys { display:none; } }
+  /* 极窄窗口兜底：仍让位给画面 */
   @media (max-width:640px) { #hudKeys { display:none; } }
 
   #msg { position:absolute; top:30%; left:50%; transform:translateX(-50%);
@@ -201,7 +206,9 @@
              align-items:center; justify-content:center; background:rgba(8,11,17,0.94); padding:28px;
              /* 结束页本轮新增了失败构成与历史榜，小窗口下总高可能超出视口 ——
                 允许纵向滚动，避免内容被裁掉（而不是压缩掉新信息）。 */
-             overflow-y:auto; }
+             overflow-y:auto;
+             /* 浮层内允许纵向滚动（菜单/结束页可能超长），但禁止双指缩放与横向平移 */
+             touch-action:pan-y; overscroll-behavior:contain; }
   .overlay.hidden { display:none; }
   .overlay h1 { font-size:32px; font-weight:600; letter-spacing:2px; }
   .overlay h1 span { color:var(--accent); }
@@ -359,6 +366,38 @@
               box-shadow:0 18px 60px rgba(0,0,0,0.65); display:block; }
   #posterBtns { display:flex; align-items:center; gap:12px; margin-top:18px; flex:0 0 auto; }
   #posterHint { font-size:11.5px; color:var(--dim); margin-top:12px; text-align:center; }
+  /* ===== 移动端触摸：交互元素禁用浏览器默认手势（双指缩放 / 双击放大），
+     防止触摸被系统手势劫持成 pointercancel（报告 E2/E5 实测）。
+     #cv 与 #hud 已在各自规则里设 none；这里补齐 HUD 内真正可点的控件。 */
+  .mini, input[type=range], #btnUiToggle, #topLinks a, .modeCard, .btn, .overlay button {
+    touch-action:none; }
+
+  /* ===== 移动端控制簇（Task 7 注入）：仅粗指针（触屏）显示，桌面隐藏 =====
+     默认隐藏，由 game.js 在 coarse pointer 下给 #hud 加 .touch-on 显示，避免桌面出现冗余按钮。
+     位置：底部居中，处于左下拍面栏与右下辅助面板之间，不挡球台中心，也不与它们重叠。 */
+  #touchCtl { display:none; gap:10px; position:absolute; left:50%; transform:translateX(-50%);
+              bottom:14px; z-index:7; }
+  #hud.touch-on #touchCtl { display:flex; }
+  .tbtn { width:46px; height:46px; border-radius:50%; border:1px solid var(--line-strong);
+          background:var(--panel); color:var(--fg); font-size:17px; line-height:1;
+          display:flex; align-items:center; justify-content:center; cursor:pointer;
+          pointer-events:auto; touch-action:none; -webkit-tap-highlight-color:transparent;
+          backdrop-filter:blur(6px); user-select:none; }
+  .tbtn:active { border-color:var(--accent); transform:scale(0.94); }
+  .tbtn.off { color:var(--dim); opacity:0.55; }
+  .tbtn.on { color:#1a1207; background:var(--accent); border-color:var(--accent); }
+
+  /* ===== P2：请横屏引导层（仅非支持设备/方向显示，z-index 高于所有浮层） ===== */
+  .rotate-hint { position:absolute; inset:0; z-index:30; display:none;
+                 flex-direction:column; align-items:center; justify-content:center;
+                 background:rgba(8,11,17,0.97); color:var(--fg); text-align:center;
+                 padding:32px; pointer-events:auto; touch-action:none; }
+  .rotate-hint.on { display:flex; }
+  .rotate-hint .rh-ico { font-size:60px; animation:rhSpin 2.6s ease-in-out infinite; }
+  .rotate-hint .rh-title { font-size:24px; font-weight:700; margin-top:18px; letter-spacing:3px; }
+  .rotate-hint .rh-sub { font-size:14px; color:var(--muted); margin-top:12px; line-height:1.9; }
+  @keyframes rhSpin { 0%,42% { transform:rotate(0); } 58%,100% { transform:rotate(90deg); } }
+
 </style>
 </head>
 <body>
@@ -440,11 +479,19 @@
         <div class="shadow"></div>
       </div>
       <div class="txt">结算中<span class="dots"><i>.</i><i>.</i><i>.</i></span></div>
-      <div class="bar"><i></i></div>
-    </div>
-  </div>
+        <div class="bar"><i></i></div>
+      </div>
 
-  <div class="overlay" id="startScreen">
+      <!-- 触屏控制簇：替代键盘 Esc/P/R/H/Shift。仅粗指针（触屏）下由 game.js 给 #hud 加 .touch-on 才显示 -->
+      <div id="touchCtl">
+        <button class="tbtn" id="tcPause" title="暂停 (P / Esc)">⏸</button>
+        <button class="tbtn" id="tcRestart" title="重开 (R)">↻</button>
+        <button class="tbtn" id="tcAssist" title="辅助提示 (H)">辅</button>
+        <button class="tbtn" id="tcHand" title="正反手 (Shift)">反</button>
+      </div>
+    </div>
+
+    <div class="overlay" id="startScreen">
     <div class="brand"><span data-logo="62"></span>
       <div><div class="nm">旋转<span>乒乓</span></div>
         <div class="en">SPIN TABLE TENNIS · FIRST-PERSON</div></div>
@@ -546,10 +593,17 @@
     <div class="sub" id="errMsg"></div>
     <div class="tip">请用支持 WebGL 的桌面浏览器（Chrome / Edge / Firefox）打开，并确认显卡驱动正常。</div>
   </div>
+
+  <!-- P2：仅平板横屏支持；手机 / 平板竖屏显示此引导层，遮罩全屏、阻断误触 -->
+  <div class="rotate-hint" id="rotateHint">
+    <div class="rh-ico">🔄</div>
+    <div class="rh-title">请横置设备</div>
+    <div class="rh-sub">本游戏仅支持「平板横屏」体验<br>请将设备旋转至横屏方向</div>
+  </div>
 </div>
 
-<script src="vendor/three.min.js?v=e11c0189"></script>
-<script src="poster.js?v=e11c0189"></script>
-<script src="game.js?v=e11c0189"></script>
+<script src="vendor/three.min.js?v=8ea495c5"></script>
+<script src="poster.js?v=8ea495c5"></script>
+<script src="game.js?v=8ea495c5"></script>
 </body>
 </html>

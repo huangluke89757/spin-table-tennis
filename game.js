@@ -542,8 +542,12 @@ function resize3D() {
   REND.setSize(w, h, false);
   CAM.aspect = w / h;
   CAM.updateProjectionMatrix();
+  if (typeof onOrientationMaybeChanged === "function") onOrientationMaybeChanged();
 }
 window.addEventListener("resize", resize3D);
+/* 横屏/竖屏切换（尤其 iOS Safari）不一定触发 resize，必须显式监听 */
+window.addEventListener("orientationchange", resize3D);
+if (window.visualViewport) window.visualViewport.addEventListener("resize", resize3D);
 
 /* ==================== 4. 游戏状态 ==================== */
 const G = {
@@ -595,7 +599,11 @@ function bindUI() {
    /* 本轮新增：双模式卡片 / 失败归因 / 历史榜 / GitHub 入口 */
    "modePractice","modeChallenge","startBtn","endMode","endGap",
    "failWrap","failList","failMain","boardWrap","boardTitle","boardList",
-   "ghLink","siteLink"]
+   "ghLink","siteLink",
+   /* 移动端触屏控制簇（Task 7）：暂停 / 重开 / 辅助 / 正反手 */
+   "tcPause","tcRestart","tcAssist","tcHand",
+   /* P2：请横屏引导层 */
+   "rotateHint"]
     .forEach(id => UI[id] = document.getElementById(id));
 }
 
@@ -735,6 +743,48 @@ function showSwing(b, action) {
   G.paddle.hy = clamp(b.y, 0.75, 1.35);
 }
 
+/* 视口短边：触屏量纲归一化的基准（报告 E8）。 */
+function viewportMin() { return Math.min(window.innerWidth, window.innerHeight); }
+
+/* ===== 触屏量纲系数（集中一处，便于真机手感微调）=====
+ * 为什么鼠标不走归一化：原版 doHit 的 140/190/1100 是绝对 CSS 像素常量，
+ * 桌面玩家（鼠标 ≈1mm 落点精度）已按它练出手感。改成按视口比例后，
+ * 同一台机器换个窗口大小手感就漂 —— 「判定可信」是这个项目的核心价值，
+ * 不能为了移动端把桌面基准动掉。所以：**鼠标保持绝对像素，触摸才归一化**。
+ * 判据用 pointerType 而不是 isCoarse()：二合一设备上鼠标与手指要各按各的算。
+ * 为什么触摸要更宽松（系数比等比例换算更大）：手指落点精度 ≈1cm，
+ * 远低于鼠标；沿用桌面量纲会出现「手指微抖就打飞」（报告 E8：手机屏宽仅 PC 的 9.7%）。 */
+const TOUCHSCALE = {
+  minSwing:  0.055,   // 最小有效挥拍幅度（× vmin），低于此判「没打实」
+  fullLen:   0.200,   // lenN 满值（× vmin）
+  fullSpeed: 0.850,   // speedN 满值（× vmin）
+  fullAim:   0.260    // aim 满幅（× 视口宽），横扫 26% 屏宽即打到底线
+};
+
+/* 是否触屏（粗指针）。用于「辅助开 + 触屏」时自动跟随拍面，桌面仍走手动滚轮/AD，不回归。 */
+function isCoarse() { return !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches); }
+
+/* ===== 拖拽量纲换算（纯函数，便于回归直接断言，不必跑完整对局） =====
+ * 两套量纲：鼠标沿用原版绝对像素 10/190/1100/140（与历史判定逐位等价、桌面手感零回归）；
+ * 触摸改按视口比例（TOUCHSCALE），解决小屏「精度需求被放大 3.7 倍」的问题（报告 E8）。
+ * 判据是 pointerType 而不是 isCoarse()：二合一设备上鼠标与手指必须各按各的算。 */
+function measureDrag(drag) {
+  const vw = window.innerWidth, vmin = viewportMin();
+  const dx = drag.x - drag.sx, dy = drag.y - drag.sy;
+  const len = Math.hypot(dx, dy);
+  const touch = drag.type === "touch";
+  const minSwing  = touch ? TOUCHSCALE.minSwing  * vmin : 10;
+  const fullLen   = touch ? TOUCHSCALE.fullLen   * vmin : 190;
+  const fullSpeed = touch ? TOUCHSCALE.fullSpeed * vmin : 1100;
+  const fullAim   = touch ? TOUCHSCALE.fullAim   * vw   : 140;
+  const speedN = Math.min(1, drag.speed / fullSpeed);
+  const lenN   = Math.min(1, len / fullLen);
+  const power  = Math.max(0.12, Math.min(1, 0.65 * speedN + 0.35 * lenN));
+  // 线路幅度封顶 ±0.85：满幅打两侧仍落在台内，避免"瞄边必出界"
+  const aim = Math.max(-0.85, Math.min(0.85, dx / fullAim));
+  return { touch, dx, len, speedN, lenN, power, aim, minSwing, tooSmall: len < minSwing };
+}
+
 function doHit(drag) {
   const b = G.ball;
   let dt;
@@ -742,16 +792,9 @@ function doHit(drag) {
   else dt = -Math.max(0.05, (HIT_Z - b.z) / Math.max(0.8, b.vz));
   if (dt > 0.42) { showSwing(b, "推挡"); fail("漏球", "球已经过去了"); return; }
 
-  const dx = drag.x - drag.sx, dy = drag.y - drag.sy;
-  const len = Math.hypot(dx, dy);
-  if (len < 10) { showSwing(b, "推挡"); fail("没打实", "挥拍幅度太小"); return; }
-
-  // PRD 4.4：方向→线路，速度→力量，滚轮/AD→拍面，松开时机→质量
-  const speedN = Math.min(1, drag.speed / 1100);
-  const lenN = Math.min(1, len / 190);
-  const power = Math.max(0.12, Math.min(1, 0.65 * speedN + 0.35 * lenN));
-  // 线路幅度封顶 ±0.85：满幅打两侧仍落在台内，避免"瞄边必出界"
-  const aim = Math.max(-0.85, Math.min(0.85, dx / 140));
+  const M = measureDrag(drag);
+  const dx = M.dx, len = M.len, speedN = M.speedN, lenN = M.lenN, power = M.power, aim = M.aim;
+  if (M.tooSmall) { showSwing(b, "推挡"); fail("没打实", "挥拍幅度太小"); return; }
   const tilt = G.paddleAngle;
 
   const correctTilt = correctTiltFor(G.spin);
@@ -992,23 +1035,43 @@ function tickMsg(frame) {
 }
 
 /* ==================== 6. 输入 ==================== */
-const drag = { on: false, sx: 0, sy: 0, x: 0, y: 0, speed: 0, t0: 0 };
+const drag = { on: false, zone: null, type: "mouse", sx: 0, sy: 0, x: 0, y: 0, speed: 0, t0: 0,
+              startY: 0, startAngle: 0 };
 function setupInput() {
   const cv = document.getElementById("cv");
-  cv.addEventListener("mousedown", e => {
+  cv.addEventListener("pointerdown", e => {
     if (!G.running || G.paused) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;  // 鼠标只认左键
+    e.preventDefault();
+    try { cv.setPointerCapture(e.pointerId); } catch (_) {}  // 手指移出 canvas 仍收得到 move/up
     drag.on = true;
+    // 量纲分支标记（doHit 用）：触摸归一化、鼠标沿用绝对像素
+    drag.type = (e.pointerType === "touch" || e.pointerType === "pen") ? "touch" : "mouse";
+    // 双区手势（报告 P1）：左 45% 屏调拍面、右 55% 屏击球 —— 与「左手键盘 / 右手鼠标」分工同构
+    drag.zone = (e.clientX < window.innerWidth * 0.45) ? "paddle" : "hit";
     drag.sx = drag.x = e.clientX;
     drag.sy = drag.y = e.clientY;
     drag.speed = 0; drag.t0 = performance.now();
+    drag.startY = e.clientY; drag.startAngle = G.paddleAngle;
   });
-  window.addEventListener("mousemove", e => {
+  window.addEventListener("pointermove", e => {
     if (!drag.on) return;
+    if (drag.zone === "paddle") {
+      // 左区纵向拖拽 → 拍面：上拖亮拍(+)，下拖压拍(-)。辅助开时由 Task 6 每帧自动跟随，这里不动。
+      if (!G.assist) {
+        const span = Math.max(90, window.innerHeight * 0.28);
+        G.paddleAngle = clamp(drag.startAngle + (drag.startY - e.clientY) / span, -1, 1);
+      }
+      return;
+    }
     drag.x = e.clientX; drag.y = e.clientY;
   });
-  window.addEventListener("mouseup", () => {
+  window.addEventListener("pointerup", () => {
     if (!drag.on) return;
     drag.on = false;
+    const wasHit = drag.zone === "hit";
+    drag.zone = null;
+    if (!wasHit) return;   // 左区调拍面手势不触发击球
     // 拖动速度取全程平均（位移 / 时长），比末段瞬时值稳定，避免"猛拖后停住"误判成大力
     const len = Math.hypot(drag.x - drag.sx, drag.y - drag.sy);
     const secs = Math.max(0.05, (performance.now() - drag.t0) / 1000);
@@ -1064,6 +1127,57 @@ function setupInput() {
   if (UI.volRange) UI.volRange.oninput = onVol;
   if (UI.volRange2) UI.volRange2.oninput = onVol;
 }
+
+/* ===== 移动端触屏控制簇（Task 7）：替代键盘 Esc/P/R/H/Shift =====
+   仅粗指针（触屏）下启用：给 #hud 加 .touch-on 显示四个按钮，桌面端始终隐藏、键盘照旧。
+   各按钮复用已有逻辑：暂停→togglePause、重开→restart、辅助→H 键逻辑（挑战模式拦截）、正反手→G.backhand。 */
+let touchCtlOn = false;
+function syncTouchCtl() {
+  if (!touchCtlOn) return;
+  const pause = UI.tcPause, restart = UI.tcRestart, assist = UI.tcAssist, hand = UI.tcHand;
+  if (!pause) return;
+  pause.classList.toggle("on", G.paused);
+  restart.classList.toggle("off", !G.running);
+  assist.classList.toggle("on", G.assist);
+  assist.classList.toggle("off", !G.assist);
+  hand.classList.toggle("on", G.backhand);
+  hand.textContent = G.backhand ? "正" : "反";
+}
+function setupTouchControls() {
+  if (!isCoarse()) return;            // 桌面不显示控制簇
+  touchCtlOn = true;
+  if (UI.hud) UI.hud.classList.add("touch-on");
+  UI.tcPause.onclick = () => { sfx("ui"); togglePause(); syncTouchCtl(); };
+  UI.tcRestart.onclick = () => { if (G.running) { sfx("ui"); restart(); } syncTouchCtl(); };
+  UI.tcAssist.onclick = () => {
+    // 复用 H 键逻辑：挑战模式强制无辅助，不给绕过口子
+    if (G.mode === "challenge") {
+      showMsg("挑战模式", "辅助提示不可开启（成绩计入排行榜）", "#ffb454", 1.2, 1, 0); sfx("ui");
+    } else { G.assist = !G.assist; savePrefs(); sfx("ui"); }
+    syncTouchCtl();
+  };
+  UI.tcHand.onclick = () => { G.backhand = !G.backhand; sfx("ui"); syncTouchCtl(); };
+  syncTouchCtl();
+}
+
+/* ===== P2：仅平板横屏支持；其余（手机任意方向 / 平板竖屏）显示「请横屏」引导层 =====
+   放行条件：桌面(fine pointer) 或（粗指针 + 屏宽≥768 + 横屏）。 */
+function isSupported() {
+  if (!window.matchMedia) return true;                                  // 不支持媒体查询 → 不拦截
+  if (!window.matchMedia("(pointer: coarse)").matches) return true;     // 桌面（细指针）放行
+  const wide = window.matchMedia("(min-width: 768px)").matches;
+  const land = window.matchMedia("(orientation: landscape)").matches;
+  return wide && land;                                                  // 仅平板横屏放行
+}
+function applySupportGate() {
+  if (!UI.rotateHint) return;
+  const ok = isSupported();
+  UI.rotateHint.classList.toggle("on", !ok);
+  // 不支持时由引导层（z-index:30 全屏遮罩 + pointer-events:auto）阻断误触，
+  // 这里不强行暂停，避免旋转回横屏后状态错乱。
+}
+function onOrientationMaybeChanged() { applySupportGate(); }
+
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 
 /* ==================== 7. 音效（Web Audio 程序化合成，零外部资源） ====================
@@ -1368,6 +1482,9 @@ function update(dt) {
     if (G.phase === "incoming") {
       if (!G.idealSet && b.z >= HIT_Z && b.vz > 0) { G.tIdeal = G.gt; G.idealSet = true; }
       if (b.z > MISS_Z || ev === "floor") fail("漏球", "没打到球");
+      // 辅助开 + 触屏：拍面每帧自动跟随当前旋转的正确角度（报告 P1），触屏玩家无需手动调拍面。
+      // 桌面（fine pointer）即使辅助开也保留手动滚轮/AD，行为不回归。
+      if (G.assist && isCoarse()) G.paddleAngle = correctTiltFor(G.spin);
     } else if (G.phase === "returning") {
       if (!G.nextServeAt && (ev === "table" || ev === "floor" || b.z < -2.2)) {
         const gain = finalizePoint();         // 这一拍落定 → 结算落点得分（含观众反应）
@@ -1707,6 +1824,7 @@ function updateHUD() {
   UI.msg.style.color = G.msgColor;
   UI.msgSub.textContent = G.msgT > 0 ? G.msgSub : "";
   UI.msgSub.style.color = G.msgColor;
+  syncTouchCtl();                       // 触屏控制簇按钮态随暂停/辅助/正反手变化（Task 7）
 }
 
 /* ===== 本地纪录系统（纯前端，无账号、无服务器） =====
@@ -2107,6 +2225,8 @@ function boot() {
     return;
   }
   setupInput();
+  setupTouchControls();                 // 触屏控制簇：仅粗指针下显示（Task 7）
+  applySupportGate();                   // P2：初始设备/方向门控（引导层显隐）
   requestAnimationFrame(loop);
 }
 boot();

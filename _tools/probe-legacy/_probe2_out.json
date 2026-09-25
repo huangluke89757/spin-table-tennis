@@ -1,0 +1,80 @@
+{
+  "attempts": [
+    {
+      "k": 0,
+      "spin": "直线快球",
+      "msgBefore": "",
+      "phaseBefore": "incoming",
+      "after": {
+        "phase": "incoming",
+        "hitDone": false,
+        "rally": 0,
+        "msg": "",
+        "sub": ""
+      }
+    },
+    {
+      "k": 1,
+      "spin": "直线快球",
+      "msgBefore": "漏球",
+      "phaseBefore": "miss",
+      "after": {
+        "phase": "miss",
+        "hitDone": false,
+        "rally": 0,
+        "msg": "漏球",
+        "sub": "没打到球"
+      }
+    }
+  ],
+  "finalStat": {
+    "hitCalls": 2,
+    "faceChanges": 6,
+    "pointerDowns": 4
+  },
+  "errs": [],
+  "twoFinger": {
+    "faceAngleWhilePressing": 0.5,
+    "afterFaceLift": {
+      "phase": "incoming",
+      "hitDone": false,
+      "rally": 0,
+      "msg": "",
+      "msgSub": "",
+      "paddleAngle": 0.64,
+      "spin": "上旋",
+      "phaseAt": 10670.699999988079
+    },
+    "afterHitLift": {
+      "phase": "miss",
+      "hitDone": false,
+      "rally": 0,
+      "msg": "漏球",
+      "msgSub": "没打到球",
+      "paddleAngle": 0.64,
+      "spin": "上旋",
+      "phaseAt": 11080.40000000596
+    },
+    "stat": {
+      "hitCalls": 2,
+      "faceChanges": 6,
+      "pointerDowns": 4
+    },
+    "log": [
+      "faceBegin@260",
+      "faceBegin@260",
+      "hitBegin@700,320",
+      "hitBegin@700,320",
+      "faceEnd",
+      "faceEnd"
+    ]
+  },
+  "events": [
+    "faceBegin@260",
+    "faceBegin@260",
+    "hitBegin@700,320",
+    "hitBegin@700,320",
+    "faceEnd",
+    "faceEnd"
+  ]
+}

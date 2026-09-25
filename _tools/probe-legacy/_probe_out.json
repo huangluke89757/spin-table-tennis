@@ -1,0 +1,407 @@
+{
+  "mobilePortrait": {
+    "dom": {
+      "innerW": 390,
+      "innerH": 844,
+      "dpr": 3,
+      "visualViewportH": 844,
+      "canvasTouchAction": "auto",
+      "canvasCursor": "crosshair",
+      "bodyOverflow": "hidden",
+      "metaViewport": "width=device-width, initial-scale=1.0",
+      "boxes": {
+        "startBtn": {
+          "x": 117,
+          "y": 746,
+          "w": 156,
+          "h": 44,
+          "right": 273,
+          "bottom": 790,
+          "disp": "block",
+          "offRight": -117,
+          "offBottom": -54
+        },
+        "hudKeys": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "right": 0,
+          "bottom": 0,
+          "disp": "none",
+          "offRight": -390,
+          "offBottom": -844
+        },
+        "hudFace": {
+          "x": 18,
+          "y": 750,
+          "w": 250,
+          "h": 76,
+          "right": 268,
+          "bottom": 826,
+          "disp": "block",
+          "offRight": -122,
+          "offBottom": -18
+        },
+        "hudAux": {
+          "x": 44,
+          "y": 782,
+          "w": 328,
+          "h": 44,
+          "right": 372,
+          "bottom": 826,
+          "disp": "flex",
+          "offRight": -18,
+          "offBottom": -18
+        },
+        "hudCfg": {
+          "x": 44,
+          "y": 782,
+          "w": 328,
+          "h": 44,
+          "right": 372,
+          "bottom": 826,
+          "disp": "flex",
+          "offRight": -18,
+          "offBottom": -18
+        },
+        "hudBrand": {
+          "x": 33,
+          "y": 29,
+          "w": 124,
+          "h": 36,
+          "right": 157,
+          "bottom": 65,
+          "disp": "flex",
+          "offRight": -233,
+          "offBottom": -779
+        },
+        "hudScore": {
+          "x": 18,
+          "y": 18,
+          "w": 154,
+          "h": 154,
+          "right": 172,
+          "bottom": 172,
+          "disp": "block",
+          "offRight": -218,
+          "offBottom": -672
+        },
+        "hudBall": {
+          "x": 127,
+          "y": 18,
+          "w": 136,
+          "h": 59,
+          "right": 263,
+          "bottom": 77,
+          "disp": "block",
+          "offRight": -127,
+          "offBottom": -767
+        },
+        "topLinks": {
+          "x": 300,
+          "y": 16,
+          "w": 74,
+          "h": 34,
+          "right": 374,
+          "bottom": 50,
+          "disp": "flex",
+          "offRight": -16,
+          "offBottom": -794
+        },
+        "btnUiToggle": {
+          "x": 278,
+          "y": 791,
+          "w": 81,
+          "h": 26,
+          "right": 359,
+          "bottom": 817,
+          "disp": "flex",
+          "offRight": -31,
+          "offBottom": -27
+        }
+      }
+    },
+    "geom": {
+      "aspect": 0.462,
+      "vFovDeg": 40,
+      "hFovDeg": 19.1,
+      "camPos": {
+        "x": 0,
+        "y": 1.84,
+        "z": 2.72
+      },
+      "visibleHalfWidth": {
+        "atHitZ_1p30": 0.239,
+        "atTableNear_1p37": 0.227,
+        "atNet_0": 0.457,
+        "atFar_neg1p37": 0.688
+      },
+      "tableFarEdge": {
+        "L": {
+          "x": -1.072,
+          "y": 0.07,
+          "off": true
+        },
+        "R": {
+          "x": 1.072,
+          "y": 0.07,
+          "off": true
+        }
+      },
+      "tableNet": {
+        "L": {
+          "x": -1.867,
+          "y": -0.26,
+          "off": true
+        },
+        "R": {
+          "x": 1.867,
+          "y": -0.26,
+          "off": true
+        }
+      },
+      "tableNearEdge": {
+        "L": {
+          "x": -2.837,
+          "y": -1.133,
+          "off": true
+        },
+        "R": {
+          "x": 2.837,
+          "y": -1.133,
+          "off": true
+        }
+      },
+      "hitPointBand": {
+        "far": {
+          "x": -3.313,
+          "y": -0.794,
+          "off": true
+        },
+        "c": {
+          "x": 0,
+          "y": -0.794,
+          "off": false
+        },
+        "near": {
+          "x": 3.313,
+          "y": -0.794,
+          "off": true
+        }
+      },
+      "hitBandVisibleMeters": 0.48,
+      "hitBandNeededMeters": 1.8
+    },
+    "midTouchState": {
+      "dragOn": false,
+      "dragX": 0,
+      "dragY": 0,
+      "sx": 0,
+      "phase": "incoming",
+      "running": true,
+      "hitDone": false,
+      "paddleAngle": 0
+    },
+    "afterTouch": {
+      "dragOn": false,
+      "dragSpeed": 0,
+      "phase": "incoming",
+      "hitDone": false,
+      "rally": 0,
+      "msg": "",
+      "events": [
+        "pointerdown#touch@4089",
+        "touchstart#@4089",
+        "pointermove#touch@4137",
+        "touchmove#@4137",
+        "pointercancel#touch@4138",
+        "touchmove#@4207",
+        "touchmove#@4254",
+        "touchmove#@4303",
+        "touchmove#@4457",
+        "touchend#@4633"
+      ]
+    },
+    "errs": []
+  },
+  "mobileLandscape": {
+    "geom": {
+      "aspect": 2.164,
+      "vFovDeg": 40,
+      "hFovDeg": 76.5,
+      "camPos": {
+        "x": 0,
+        "y": 1.84,
+        "z": 2.72
+      },
+      "visibleHalfWidth": {
+        "atHitZ_1p30": 1.118,
+        "atTableNear_1p37": 1.063,
+        "atNet_0": 2.142,
+        "atFar_neg1p37": 3.222
+      },
+      "tableFarEdge": {
+        "L": {
+          "x": -0.229,
+          "y": 0.07,
+          "off": false
+        },
+        "R": {
+          "x": 0.229,
+          "y": 0.07,
+          "off": false
+        }
+      },
+      "tableNet": {
+        "L": {
+          "x": -0.399,
+          "y": -0.26,
+          "off": false
+        },
+        "R": {
+          "x": 0.399,
+          "y": -0.26,
+          "off": false
+        }
+      },
+      "tableNearEdge": {
+        "L": {
+          "x": -0.606,
+          "y": -1.133,
+          "off": true
+        },
+        "R": {
+          "x": 0.606,
+          "y": -1.133,
+          "off": true
+        }
+      },
+      "hitPointBand": {
+        "far": {
+          "x": -0.707,
+          "y": -0.794,
+          "off": false
+        },
+        "c": {
+          "x": 0,
+          "y": -0.794,
+          "off": false
+        },
+        "near": {
+          "x": 0.707,
+          "y": -0.794,
+          "off": false
+        }
+      },
+      "hitBandVisibleMeters": 2.24,
+      "hitBandNeededMeters": 1.8
+    },
+    "dom": {
+      "innerW": 844,
+      "innerH": 390
+    }
+  },
+  "desktop": {
+    "geom": {
+      "aspect": 1.6,
+      "vFovDeg": 40,
+      "hFovDeg": 60.4,
+      "camPos": {
+        "x": 0,
+        "y": 1.84,
+        "z": 2.72
+      },
+      "visibleHalfWidth": {
+        "atHitZ_1p30": 0.827,
+        "atTableNear_1p37": 0.786,
+        "atNet_0": 1.584,
+        "atFar_neg1p37": 2.382
+      },
+      "tableFarEdge": {
+        "L": {
+          "x": -0.31,
+          "y": 0.07,
+          "off": false
+        },
+        "R": {
+          "x": 0.31,
+          "y": 0.07,
+          "off": false
+        }
+      },
+      "tableNet": {
+        "L": {
+          "x": -0.539,
+          "y": -0.26,
+          "off": false
+        },
+        "R": {
+          "x": 0.539,
+          "y": -0.26,
+          "off": false
+        }
+      },
+      "tableNearEdge": {
+        "L": {
+          "x": -0.819,
+          "y": -1.133,
+          "off": true
+        },
+        "R": {
+          "x": 0.819,
+          "y": -1.133,
+          "off": true
+        }
+      },
+      "hitPointBand": {
+        "far": {
+          "x": -0.957,
+          "y": -0.794,
+          "off": false
+        },
+        "c": {
+          "x": 0,
+          "y": -0.794,
+          "off": false
+        },
+        "near": {
+          "x": 0.957,
+          "y": -0.794,
+          "off": false
+        }
+      },
+      "hitBandVisibleMeters": 1.65,
+      "hitBandNeededMeters": 1.8
+    }
+  },
+  "sensitivity": {
+    "mobile390": {
+      "screenW": 390,
+      "aimFullAtPx": 140,
+      "aimFullPctOfWidth": 35.9,
+      "aimClampAtPx": 119,
+      "aimClampPctOfWidth": 30.5,
+      "lenFullAtPx": 190,
+      "lenFullPctOfWidth": 48.7
+    },
+    "pad768": {
+      "screenW": 768,
+      "aimFullAtPx": 140,
+      "aimFullPctOfWidth": 18.2,
+      "aimClampAtPx": 119,
+      "aimClampPctOfWidth": 15.5,
+      "lenFullAtPx": 190,
+      "lenFullPctOfWidth": 24.7
+    },
+    "pc1440": {
+      "screenW": 1440,
+      "aimFullAtPx": 140,
+      "aimFullPctOfWidth": 9.7,
+      "aimClampAtPx": 119,
+      "aimClampPctOfWidth": 8.3,
+      "lenFullAtPx": 190,
+      "lenFullPctOfWidth": 13.2
+    }
+  }
+}

@@ -1,0 +1,341 @@
+{
+  "landscape844x390": {
+    "survey": {
+      "canvasTouchAction": "auto",
+      "stageTouchAction": "auto",
+      "bodyTouchAction": "auto",
+      "htmlOverscroll": "auto",
+      "boxes": {
+        "hudBrand": {
+          "x": 33,
+          "y": 29,
+          "w": 124,
+          "h": 36,
+          "display": "flex",
+          "pe": "none",
+          "ta": "auto"
+        },
+        "hudScore": {
+          "x": 18,
+          "y": 18,
+          "w": 154,
+          "h": 154,
+          "display": "block",
+          "pe": "none",
+          "ta": "auto"
+        },
+        "hudBall": {
+          "x": 354,
+          "y": 18,
+          "w": 136,
+          "h": 59,
+          "display": "block",
+          "pe": "none",
+          "ta": "auto"
+        },
+        "hudFace": {
+          "x": 18,
+          "y": 296,
+          "w": 250,
+          "h": 76,
+          "display": "block",
+          "pe": "none",
+          "ta": "auto"
+        },
+        "hudKeys": {
+          "x": 527,
+          "y": 214,
+          "w": 299,
+          "h": 106,
+          "display": "block",
+          "pe": "auto",
+          "ta": "auto"
+        },
+        "hudCfg": {
+          "x": 498,
+          "y": 328,
+          "w": 328,
+          "h": 44,
+          "display": "flex",
+          "pe": "auto",
+          "ta": "auto"
+        },
+        "btnUiToggle": {
+          "x": 732,
+          "y": 337,
+          "w": 81,
+          "h": 26,
+          "display": "flex",
+          "pe": "auto",
+          "ta": "auto"
+        },
+        "topLinks": {
+          "x": 754,
+          "y": 16,
+          "w": 74,
+          "h": 34,
+          "display": "flex",
+          "pe": "auto",
+          "ta": "auto"
+        },
+        "barMark": {
+          "x": 141,
+          "y": 330,
+          "w": 4,
+          "h": 14,
+          "display": "block",
+          "pe": "none",
+          "ta": "auto"
+        }
+      },
+      "hitMapTop": [
+        "cv:672",
+        "hudKeys:56",
+        "hudCfg:33",
+        "b:19",
+        "volRange:5",
+        "btnMute:3",
+        "svg.[object:2",
+        "volTxt:2"
+      ],
+      "total": 798,
+      "canvasPts": 672,
+      "canvasPct": 84.2
+    },
+    "chains": [
+      {
+        "label": "屏幕正中(200)",
+        "at": {
+          "x": 420,
+          "y": 200
+        },
+        "target": "cv",
+        "ev": [
+          "pointerdown",
+          "touchstart",
+          "pointermove",
+          "touchmove",
+          "pointercancel",
+          "touchmove",
+          "touchmove",
+          "touchend"
+        ]
+      },
+      {
+        "label": "中下(330)",
+        "at": {
+          "x": 420,
+          "y": 330
+        },
+        "target": "cv",
+        "ev": [
+          "pointerdown",
+          "pointerdown",
+          "touchstart",
+          "touchstart",
+          "pointermove",
+          "pointermove",
+          "touchmove",
+          "touchmove",
+          "pointercancel",
+          "pointercancel",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchend",
+          "touchend"
+        ]
+      },
+      {
+        "label": "右下HUD区",
+        "at": {
+          "x": 620,
+          "y": 340
+        },
+        "target": "cfgBody",
+        "ev": [
+          "pointerdown",
+          "pointerdown",
+          "pointerdown",
+          "touchstart",
+          "touchstart",
+          "touchstart",
+          "pointermove",
+          "pointermove",
+          "pointermove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "pointercancel",
+          "pointercancel",
+          "pointercancel",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchend",
+          "touchend",
+          "touchend"
+        ]
+      },
+      {
+        "label": "左下拍面栏区",
+        "at": {
+          "x": 150,
+          "y": 340
+        },
+        "target": "endScreen",
+        "ev": [
+          "pointerdown",
+          "pointerdown",
+          "pointerdown",
+          "pointerdown",
+          "touchstart",
+          "touchstart",
+          "touchstart",
+          "touchstart",
+          "pointermove",
+          "pointermove",
+          "pointermove",
+          "pointermove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "pointercancel",
+          "pointercancel",
+          "pointercancel",
+          "pointercancel",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchmove",
+          "touchend",
+          "touchend",
+          "touchend",
+          "touchend"
+        ]
+      }
+    ]
+  },
+  "portrait390x844": {
+    "survey": {
+      "canvasTouchAction": "auto",
+      "stageTouchAction": "auto",
+      "bodyTouchAction": "auto",
+      "htmlOverscroll": "auto",
+      "boxes": {
+        "hudBrand": {
+          "x": 33,
+          "y": 29,
+          "w": 124,
+          "h": 36,
+          "display": "flex",
+          "pe": "none",
+          "ta": "auto"
+        },
+        "hudScore": {
+          "x": 18,
+          "y": 18,
+          "w": 154,
+          "h": 154,
+          "display": "block",
+          "pe": "none",
+          "ta": "auto"
+        },
+        "hudBall": {
+          "x": 127,
+          "y": 18,
+          "w": 136,
+          "h": 59,
+          "display": "block",
+          "pe": "none",
+          "ta": "auto"
+        },
+        "hudFace": {
+          "x": 18,
+          "y": 750,
+          "w": 250,
+          "h": 76,
+          "display": "block",
+          "pe": "none",
+          "ta": "auto"
+        },
+        "hudKeys": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "display": "none",
+          "pe": "auto",
+          "ta": "auto"
+        },
+        "hudCfg": {
+          "x": 44,
+          "y": 782,
+          "w": 328,
+          "h": 44,
+          "display": "flex",
+          "pe": "auto",
+          "ta": "auto"
+        },
+        "btnUiToggle": {
+          "x": 278,
+          "y": 791,
+          "w": 81,
+          "h": 26,
+          "display": "flex",
+          "pe": "auto",
+          "ta": "auto"
+        },
+        "topLinks": {
+          "x": 300,
+          "y": 16,
+          "w": 74,
+          "h": 34,
+          "display": "flex",
+          "pe": "auto",
+          "ta": "auto"
+        },
+        "barMark": {
+          "x": 141,
+          "y": 784,
+          "w": 4,
+          "h": 14,
+          "display": "block",
+          "pe": "none",
+          "ta": "auto"
+        }
+      },
+      "hitMapTop": [
+        "cv:760",
+        "hudCfg:20",
+        "cfgBody:6",
+        "btnMute:3",
+        "btnUiToggle:2",
+        "uiToggleTxt:2",
+        "path.[object:1",
+        "ghLink:1"
+      ],
+      "total": 798,
+      "canvasPts": 760,
+      "canvasPct": 95.2
+    }
+  },
+  "controlTouchActionNone": {
+    "atCanvasBlank300x120": [
+      "pointerdown@300",
+      "pointermove@300",
+      "pointermove@300",
+      "pointermove@300",
+      "pointerup@300"
+    ]
+  }
+}

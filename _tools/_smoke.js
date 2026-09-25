@@ -179,6 +179,20 @@ const __gain_ramps = () => __GAIN_RAMPS();
 const __AUD_i8 = () => 0;
 const __tick = f => { CLOCK.t += f * 1000; loop(CLOCK.t); };
 const PAD_VIS = () => !!(G.paddle.side < 0 ? OBJ.racket.visible : OBJ.racketL.visible);
+
+/* ---------- 输入派发助手：输入层已统一到 Pointer Events ----------
+ * 为什么统一收口到这里：game.js 把 mousedown/mousemove/mouseup 换成了 pointer 系列。
+ * 桩若继续派发鼠标事件，后果是**静默全废**——每一拍都打不出、断言假红，
+ * 却没有任何报错可查（本轮移动端改造就踩了这个坑：自动玩家 6 局 0 拍回球）。
+ * 浏览器把鼠标事件合并成 pointer 是标准行为，桩照此对齐即可，游戏侧不留测试后门。
+ * pointerType 必须显式给 "mouse"：doHit 靠它选量纲（鼠标绝对像素 / 触摸视口比例）。 */
+const PTR = (o) => Object.assign({ pointerType: "mouse", button: 0, buttons: 1, pointerId: 1,
+                                   preventDefault() {} }, o);
+const fireDown = (x, y) => els.cv._fire("pointerdown", PTR({ clientX: x, clientY: y }));
+const fireMove = (x, y) => (winL.pointermove || []).forEach(f => f(PTR({ clientX: x, clientY: y })));
+const fireUp   = ()    => (winL.pointerup   || []).forEach(f => f(PTR({})));
+/* 一次完整挥拍：按下 → 位移 → 抬起，等价于原版 mousedown/mousemove/mouseup 三段 */
+const swing = (x0, y0, dx, dy) => { fireDown(x0, y0); fireMove(x0 + dx, y0 + (dy || 0)); fireUp(); };
 /* 球拍几何量在 Node 侧从 game.js 源码解析（见下方 parseRKT）——
  * 放在沙箱模板里的话，模板字符串会先把 \s 吃成 s，正则静默失效。
  * 这里只负责把它挂上 CLASS。 */
@@ -265,9 +279,7 @@ const T_BYTYPE = Object.entries(byType).map(([k, v]) => k + " " + (v.s / v.n).to
 restart();
 serve();
 G.paddle.anim = -1;
-els.cv._fire("mousedown", { clientX: 800, clientY: 500 });
-(winL.mousemove || []).forEach(f => f({ clientX: 900, clientY: 430 }));
-(winL.mouseup || []).forEach(f => f({}));
+swing(800, 500, 100, -70);
 const PADDLE_AT = [];
 for (let i = 0; i < 40; i++) {
   const rk = PAD_VIS();
@@ -283,9 +295,7 @@ function swingCase(setup, label) {
   restart(); serve();
   G.paddle.anim = -1; G.paddle.pend = 0;
   if (setup) setup();
-  els.cv._fire("mousedown", { clientX: 800, clientY: 500 });
-  (winL.mousemove || []).forEach(f => f({ clientX: 900, clientY: 430 }));
-  (winL.mouseup || []).forEach(f => f({}));
+  swing(800, 500, 100, -70);
   let vis = false;
   for (let i = 0; i < 40 && !vis; i++) { if (PAD_VIS()) vis = true; else __tick(0.016); }
   return { label: label, anim: G.paddle.anim, vis: vis, msg: G.msg };
@@ -296,9 +306,7 @@ const SWING_OK   = (() => {
   restart(); serve();
   G.paddle.anim = -1;
   G.idealSet = true; G.tIdeal = G.gt;
-  els.cv._fire("mousedown", { clientX: 800, clientY: 500 });
-  (winL.mousemove || []).forEach(f => f({ clientX: 900, clientY: 430 }));
-  (winL.mouseup || []).forEach(f => f({}));
+  swing(800, 500, 100, -70);
   let vis = false;
   for (let i = 0; i < 40 && !vis; i++) { if (PAD_VIS()) vis = true; else __tick(0.016); }
   return { label: "打中", anim: G.paddle.anim, vis: vis, msg: G.msg };
@@ -335,9 +343,7 @@ for (let i = 0; i < 400 && !GOOD_D; i++) {
   if (G.gt < ideal) continue;
   G.paddleAngle = Math.max(-1, Math.min(1, correctTiltFor(G.spin)));
   const dx = Math.abs(G.spin.wy) > 60 ? -Math.sign(G.spin.wy) * 112 : 70;
-  els.cv._fire("mousedown", { clientX: 800, clientY: 500 });
-  (winL.mousemove || []).forEach(f => f({ clientX: 800 + dx, clientY: 500 }));
-  (winL.mouseup || []).forEach(f => f({}));
+  swing(800, 500, dx, 0);
   if (GOOD_TXT.indexOf(G.msg) >= 0) {
     /* 排队机制下「好球」可能已被后来的「落点精准」接替，两者都要能读到。
      * 这里记「当前显示的那条」的时长与保护期。 */
@@ -356,9 +362,7 @@ for (let i = 0; i < 900 && SAMPLE < 200; i++) {
   if (G.gt < ideal) continue;
   G.paddleAngle = Math.max(-1, Math.min(1, correctTiltFor(G.spin)));
   const dx = Math.abs(G.spin.wy) > 60 ? -Math.sign(G.spin.wy) * 112 : 70;
-  els.cv._fire("mousedown", { clientX: 800, clientY: 500 });
-  (winL.mousemove || []).forEach(f => f({ clientX: 800 + dx, clientY: 500 }));
-  (winL.mouseup || []).forEach(f => f({}));
+  swing(800, 500, dx, 0);
   SAMPLE++;
   if (G.msg === "出边线") SIDE_WIDE++;
   else if (G.msg === "出界" || G.msg === "下网" || G.msg === "没过网" || G.msg === "漏球") LONG_FAIL++;
@@ -381,12 +385,12 @@ function playOneGame(maxFrames) {
         const dx = Math.abs(G.spin.wy) > 60 ? -Math.sign(G.spin.wy) * 112 : 70;
         planned = { dx };
         dragging = true;
-        G_("down", () => els.cv._fire("mousedown", { clientX: 800, clientY: 500 }));
+        G_("down", () => fireDown(800, 500));
       }
       if (dragging && G.gt >= ideal) {
         dragging = false; hits++;
-        G_("move", () => (winL.mousemove || []).forEach(f => f({ clientX: 800 + planned.dx, clientY: 500 })));
-        G_("up", () => (winL.mouseup || []).forEach(f => f({})));
+        G_("move", () => fireMove(800 + planned.dx, 500));
+        G_("up",   () => fireUp());
         LOG.push({ n: hits, spin: G.spinName, wx: Math.round(G.spin.wx), wy: Math.round(G.spin.wy),
                    pa: +G.paddleAngle.toFixed(2), hitY: +G.ball.y.toFixed(2), hx: +G.ball.x.toFixed(2), mk: G.mark ? [+G.mark.x.toFixed(2), +G.mark.z.toFixed(2)] : null, res: (G.msg + " " + G.msgSub).trim() });
       }

@@ -1,0 +1,238 @@
+{
+  "A_simGesture": [
+    {
+      "k": 0,
+      "spin": "直线快球",
+      "angle": 0,
+      "gesture": {
+        "ok": true,
+        "atIdeal": true,
+        "phaseAtUp": "returning",
+        "ms": 552
+      },
+      "before": {
+        "rally": 0,
+        "score": 0
+      },
+      "after": {
+        "phase": "returning",
+        "rally": 1,
+        "score": 0,
+        "msg": "PERFECT",
+        "sub": "时机完美　连续 1 拍",
+        "hitDone": true,
+        "hits": 1,
+        "diag": [
+          "hitUp len=150 v=279 phase=incoming pass=true"
+        ]
+      },
+      "rallied": true
+    },
+    {
+      "k": 1,
+      "spin": "轻下旋",
+      "angle": 0,
+      "gesture": {
+        "ok": true,
+        "atIdeal": true,
+        "phaseAtUp": "returning",
+        "ms": 976
+      },
+      "before": {
+        "rally": 1,
+        "score": 1
+      },
+      "after": {
+        "phase": "returning",
+        "rally": 2,
+        "score": 1,
+        "msg": "PERFECT",
+        "sub": "时机完美　连续 1 拍",
+        "hitDone": true,
+        "hits": 2,
+        "diag": [
+          "hitUp len=150 v=279 phase=incoming pass=true",
+          "hitUp len=150 v=157 phase=incoming pass=true"
+        ]
+      },
+      "rallied": true
+    },
+    {
+      "k": 2,
+      "spin": "下旋",
+      "angle": 0.95,
+      "gesture": {
+        "ok": true,
+        "atIdeal": true,
+        "phaseAtUp": "miss",
+        "ms": 550
+      },
+      "before": {
+        "rally": 2,
+        "score": 2
+      },
+      "after": {
+        "phase": "miss",
+        "rally": 2,
+        "score": 2,
+        "msg": "下网",
+        "sub": "力量不够，球没过网",
+        "hitDone": true,
+        "hits": 3,
+        "diag": [
+          "hitUp len=150 v=279 phase=incoming pass=true",
+          "hitUp len=150 v=157 phase=incoming pass=true",
+          "hitUp len=150 v=273 phase=incoming pass=true"
+        ]
+      },
+      "rallied": false
+    },
+    {
+      "k": 3,
+      "spin": "直线快球",
+      "angle": 0,
+      "gesture": {
+        "ok": true,
+        "atIdeal": true,
+        "phaseAtUp": "returning",
+        "ms": 678
+      },
+      "before": {
+        "rally": 0,
+        "score": 0
+      },
+      "after": {
+        "phase": "returning",
+        "rally": 1,
+        "score": 0,
+        "msg": "PERFECT",
+        "sub": "时机完美　连续 1 拍",
+        "hitDone": true,
+        "hits": 4,
+        "diag": [
+          "hitUp len=150 v=157 phase=incoming pass=true",
+          "hitUp len=150 v=273 phase=incoming pass=true",
+          "hitUp len=150 v=230 phase=incoming pass=true"
+        ]
+      },
+      "rallied": true
+    },
+    {
+      "k": 4,
+      "spin": "轻上旋",
+      "angle": 0,
+      "gesture": {
+        "ok": true,
+        "atIdeal": true,
+        "phaseAtUp": "returning",
+        "ms": 193
+      },
+      "before": {
+        "rally": 1,
+        "score": 1
+      },
+      "after": {
+        "phase": "returning",
+        "rally": 2,
+        "score": 2,
+        "msg": "PERFECT",
+        "sub": "时机完美　连续 1 拍",
+        "hitDone": true,
+        "hits": 5,
+        "diag": [
+          "hitUp len=150 v=273 phase=incoming pass=true",
+          "hitUp len=150 v=230 phase=incoming pass=true",
+          "hitUp len=150 v=875 phase=incoming pass=true"
+        ]
+      },
+      "rallied": true
+    },
+    {
+      "k": 5,
+      "spin": "右侧旋",
+      "angle": 0,
+      "gesture": {
+        "ok": true,
+        "atIdeal": true,
+        "phaseAtUp": "miss",
+        "ms": 1145
+      },
+      "before": {
+        "rally": 2,
+        "score": 2
+      },
+      "after": {
+        "phase": "miss",
+        "rally": 2,
+        "score": 2,
+        "msg": "出边线",
+        "sub": "回球线路太偏，球出边线",
+        "hitDone": true,
+        "hits": 6,
+        "diag": [
+          "hitUp len=150 v=230 phase=incoming pass=true",
+          "hitUp len=150 v=875 phase=incoming pass=true",
+          "hitUp len=150 v=131 phase=incoming pass=true"
+        ]
+      },
+      "rallied": false
+    }
+  ],
+  "B_cdpTouch": [
+    {
+      "k": 0,
+      "rallyBefore": 0,
+      "after": {
+        "phase": "miss",
+        "rally": 0,
+        "msg": "漏球",
+        "sub": "没打到球",
+        "hitDone": false,
+        "diag": [
+          "pointerCANCEL"
+        ]
+      },
+      "rallied": false
+    },
+    {
+      "k": 1,
+      "rallyBefore": 0,
+      "after": {
+        "phase": "miss",
+        "rally": 0,
+        "msg": "漏球",
+        "sub": "没打到球",
+        "hitDone": false,
+        "diag": [
+          "pointerCANCEL",
+          "pointerCANCEL"
+        ]
+      },
+      "rallied": false
+    },
+    {
+      "k": 2,
+      "rallyBefore": 0,
+      "after": {
+        "phase": "incoming",
+        "rally": 0,
+        "msg": "",
+        "sub": "",
+        "hitDone": false,
+        "diag": [
+          "pointerCANCEL",
+          "pointerCANCEL",
+          "pointerCANCEL"
+        ]
+      },
+      "rallied": false
+    }
+  ],
+  "errs": [],
+  "finalHits": 6,
+  "finalDiag": [
+    "pointerCANCEL",
+    "pointerCANCEL",
+    "pointerCANCEL"
+  ]
+}

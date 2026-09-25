@@ -1,463 +1,323 @@
-# Implementation Plan: 旋转乒乓 · 留存机制升级 + GitHub 开源发布
+# Implementation Plan: 旋转乒乓 · 移动端纯手势操作（横屏 + 平板）
 
 ## Overview
 
-本轮做四件事：① 落地竞品调研给出的 3 项优化（P0 失败归因统计、P0 本地排行榜、P1 双模式显式化）；
-② 系统性审视本次升级的结构性风险；③ 项目开源发布到 GitHub（`huangluke89757/spin-table-tennis`，MIT）；
-④ 网页右上角加 GitHub 入口 + 重写一份图文结合的开源 README。
+基于已交付的《移动端手势可行性分析报告》，把当前「鼠标 + 键盘」操作改造为「横屏 + 平板」下的纯手势操作。
+分三阶段推进：**P0 输入层地基**（touch-action 四层覆盖 + Pointer Events 统一 + 量纲归一化 + 横屏适配）、
+**P1 触屏手势**（双区手势 + 拍面辅助跟随 + 触屏控制簇 + 浮层可达）、**P2 手机竖屏降级**（仅平板横屏支持，其余显示「请横屏」引导）。
 
-三项玩法优化**不是三个独立功能，而是同一条因果链上的三个环节** —— 这是本计划最重要的判断，
-也是决定实现顺序的依据（详见「架构决策」第 1 条）。
+**核心约束**：桌面端（鼠标 + 键盘 + 滚轮）必须零回归；所有结论均来自报告里的 8 条真浏览器实测证据（E1–E8），
+改造方法已用 5 轮 Playwright 探针验证可行（6/6 手势识别有效击球、4/6 成功回球得分）。
 
 ---
 
-## 一、系统性思考：为什么是这三件事
+## 一、架构决策
 
-> 用系统思考工具箱（存量-流量 / 反馈回路 / 8 大基模 / 12 级杠杆点）对本次升级做结构分析。
+### 决策 1：输入层用 Pointer Events 统一，而非新增独立 Touch 分支
+- 现有 `setupInput` 只绑 `mousedown/mousemove/mouseup` + `wheel` + `keydown`。
+- 改用 `pointerdown/pointermove/pointerup`（统一 mouse/touch/pen），**删除原 mouse 监听**，避免 mouse+pointer 双触发 `doHit`。
+- 桌面鼠标走 `pointerType==="mouse"` 仍被覆盖；`wheel` 拍面保留给桌面；键盘快捷键全部保留。
+- 必须配 `touch-action:none`（见决策 2），否则触摸会被浏览器手势掐断成 `pointercancel`。
 
-### 1.1 存量-流量建模：产品在积累什么
+### 决策 2：touch-action 必须覆盖四层 + HUD 交互元素单独设
+- 报告 E2/E5 实测：只给 `#cv` 设 `none` 不够——触摸点落在 HUD 元素（hudKeys/hudCfg）上时仍会被 `pointercancel`。
+- 必须 `html, body, #stage, #cv` 全部 `touch-action:none` + `overscroll-behavior:none`；
+  HUD 里真正可交互的元素（按钮 / range / 模式卡）单独 `touch-action:none`，其余面板设 `pointer-events:none` 让出触摸区。
 
-| 存量 | 流入 | 流出 | 当前状态 |
-|---|---|---|---|
-| **玩家「技能存量」**（旋转辨识能力） | 每次成功接住旋转球 | 无反馈则停滞 | ⚠️ 增长慢 —— 玩家知道「我输了」，但不知道「我差在哪」 |
-| **玩家「回访意愿」** | 成就感（落点精准 / 神来一板） | 挫败感（一失误即结束） | ⚠️ 净流量接近零 —— 只有单局内的即时爽感，没有跨局积累 |
-| **项目「可传播资产」** | Star / 口碑 / 分享海报 | 无人知晓 | ❌ 几乎为零 —— 未开源、无外部入口 |
+### 决策 3：量纲归一化到视口，而非绝对像素
+- 报告 E8：旧 `dx/140`、`len/190`、`speed/1100` 全是绝对 CSS 像素，竖屏屏宽仅 PC 9.7%，手机精度需求是 PC 的 ~3.7×。
+- 新增 `normDrag()`：把位移按「视口宽/高/对角线」归一（如 `aim = dx/(0.30*vw)`、`lenN = len/(0.22*vmin)`、`speedN = (len/secs)/(0.9*vmin)`），
+  做到分辨率 / 方向无关。桌面端手感通过系数微调保持与现状一致（用 Task 11 触摸测试校准）。
 
-**结论**：三个存量都在微量或零增长。前两个对应玩法优化，第三个对应开源发布 —— 本轮改动覆盖面是对的。
+### 决策 4：双区手势 = 左手调拍面 / 右手击球（与「左手键盘 + 右手鼠标」同构）
+- `pointerdown` 命中测试：`clientX < 0.45*vw` → 左区（调拍面，替代滚轮/AD）；否则右区（击球，替代鼠标拖拽）。
+- 左区纵向拖拽映射到 `G.paddleAngle∈[-1,1]`（上=亮拍，下=压拍）。
+- 右区拖拽写入 `drag` 对象，松手调用 `doHit(drag)`——直接复用真实物理内核，不重写判定。
 
-### 1.2 反馈回路：缺的是哪一条
+### 决策 5：拍面辅助跟随只在「辅助开」时启用（挑战模式全手动）
+- 报告 P1：辅助开（`G.assist`）时每帧 `G.paddleAngle = correctTiltFor(G.spin)` 实时跟随，玩家只需做击球手势 + 方向；
+  左区拖拽在辅助态下禁用（自动已是最优），避免「自动值被手动覆盖」的混乱。
+- 挑战模式（`G.assist=false`，由 `setMode` 强制）左区完全手动——保留「看旋转、自己调拍面」的核心技巧点。
 
-```
-R1 技能-成就（已存在，但很弱）
-   技能↑ → 落点越准 → 得分越高 → 成就感↑ → 再玩 → 技能↑
-   ↑ 弱点：成就感只在单局内，局与局之间不累积
+### 决策 6：P2 门控规则 =「仅平板横屏」
+- `isTabletLandscape = matchMedia("(pointer:coarse)").matches && matchMedia("(min-width:768px)").matches && matchMedia("(orientation:landscape)").matches`
+- 放行条件：`!coarse`（桌面）OR `isTabletLandscape`（平板横屏）。
+- 其余（手机任意方向、平板竖屏）显示「请横屏」全屏引导层，不进入对局。
+- 开放问题：宽屏手机横置（CSS 宽 ≥768）会误放行。可接受（其横屏本就可玩）；若需严格排除，改用 UA/设备内存启发式，列为待定。
 
-R2 记录-挑战（★ 当前完全缺失）
-   成绩被记录 → 有了可比目标 → 挑战欲↑ → 再玩 → 刷新记录 → 目标抬高
-   ↑ 本地排行榜正是为修这条回路
+### 决策 7：验证复用探针方法论，沉淀为常驻回归
+- 现有 5 个 `_probe_touch*.js`（工作区根）是一次性探针，归档进 `_tools/` 作参考；
+  正式测试新建 `_tools/_touch.js`，用 Playwright CDP `Input.dispatchTouchEvent` 注入真实触摸，复刻 E1–E8 断言并接入 `_run_all.js`。
 
-R3 传播-Star（★ 当前完全缺失）
-   玩得爽 → 分享 / 被搜到 → 新用户 → Star↑ → 项目可信度↑ → 更多新用户
-   ↑ GitHub 入口 + README 正是为修这条回路
+---
 
-B1 难度天花板（调节回路，限制 R1）
-   难度↑ → 失败率↑ → 挫败 → 流失
-   ↑ 「一球即结束」放大了这条回路 —— 这是产品当前最大的天花板
+## 二、任务清单
 
-B2 零容错（调节回路）
-   一失误即结束 → 无缓冲 → 挫败感无处释放
-   ↑ 不能靠「降难度」解决（见下）
-```
+### Phase 0 — P0 输入层地基
 
-**关键洞察**：R2 缺失 = 玩家没有「跨局目标」，这是留存黏性只得 3.0 的结构性原因，
-而不是「功能不够多」。
+- [ ] **Task 1 [S]** 移动端视口与触摸拦截（viewport + touch-action 四层覆盖 + HUD 交互元素）
+- [ ] **Task 2 [M]** Pointer Events 统一输入（mouse→pointer，消除双触发；保留 wheel + 键盘）
+- [ ] **Task 3 [M]** doHit 量纲归一化（normDrag，视口比例，桌面手感不变）
+- [ ] **Task 4 [S]** 横屏布局适配（resize3D 绑 orientationchange；移动端 HUD 死区清理）
 
-### 1.3 基模诊断：三个必须避开的陷阱
+### Checkpoint: P0（桌面零回归 + 平板横屏能开局、触摸不被掐断）
+- [ ] `node _syntax.js` 全绿、`node _smoke.js` 旧断言不回归
+- [ ] 真浏览器（iPad 横屏视口）注入触摸序列：无 `pointercancel`、单次拖拽能触发 `doHit`
 
-| 基模 | 如果做错会怎样 | 本计划的对策 |
-|---|---|---|
-| **基模6 转嫁负担** | 为留新手而**降难度** → 侵蚀「旋转辨识」这个核心价值 → 产品退化成又一个无脑乒乓 | **用「双模式」而非「降难度」**：给新手一条低门槛路径（练习），但**不改变高门槛路径的标准**（挑战模式计榜）。这是 P1 双模式最本质的价值 —— 它不是「多一个开关」，而是**避免用降难度转嫁负担的机制设计** |
-| **基模8 目标错位** | 继续只用「连续回球数」—— 它容易衡量，但 ≠ 玩家真正想要的「我变强了」 | 补「落点精准数 + 每档难度最佳 + 历史前十」，让目标更接近真实价值 |
-| **基模3 目标侵蚀** | 没有绝对标准 → 玩家随波逐流 | 挑战模式提供**绝对标准**（计入榜单，不可用辅助） |
+### Phase 1 — P1 触屏手势
 
-### 1.4 杠杆点寻宝：哪一项最值得先做
+- [ ] **Task 5 [M]** 双区手势（右区击球 + 左区调拍面，命中测试分流）
+- [ ] **Task 6 [M]** 拍面辅助跟随（辅助开自动 correctTiltFor；挑战模式左区全手动）
+- [ ] **Task 7 [M]** 触屏控制簇（暂停 / 重开 / 辅助 / 正反手 按钮，替代 Esc/P/R/H/Shift）+ 浮层触屏可达
 
-| 改动 | 杠杆级别 | 强度 | 判断 |
-|---|---|---|---|
-| **失败归因统计** | **#6 信息流** | ★★★★☆ | **把玩家看不见的「自己失败的结构」变成可见** —— 信息透明本身就是杠杆。它降低的是「我不知道怎么变强」这种最伤留存的挫败 |
-| **本地排行榜** | #7 增强回路 | ★★★★☆ | 撬动 R2。但**依赖前提**：玩家得先在意分数 |
-| **双模式** | #5 系统规则 | ★★★★☆ | 重新定义「什么算成绩」。是另外两项的**规则前提** |
-| （原版已有）辅助提示开关 | #12 参数 | ★☆☆☆☆ | 藏在菜单里的开关 —— 典型低杠杆 |
+### Checkpoint: P1（平板横屏纯手势可完整对局）
+- [ ] 真浏览器：双区手势下能连续回球 ≥3 拍、拍面随左区变化、控制簇各按钮生效
+- [ ] 桌面端：鼠标 + 键盘 + 滚轮仍完全可用，旧断言不回归
 
-**排序结论**：**失败归因（#6）优先级最高**，而不是排行榜（#7）。
-理由：排行榜需要「玩家已经在意分数」，而失败归因直接降低新手最早遇到的挫败
-（「我一直输，但不知道为什么」）。这与竞品调研的发现一致 ——
-跨 14 款竞品，最高频差评正是「判定不可信 / 不知道错在哪」。
+### Phase 2 — P2 手机竖屏降级
 
-### 1.5 三项改动的因果链（决定实现顺序）
+- [ ] **Task 8 [M]** 设备/方向门控（仅平板横屏放行，其余拦截）
+- [ ] **Task 9 [S]** 「请横屏」引导层（竖屏/非平板遮罩 + orientationchange/resize 实时切换）
 
-```
-双模式（#5 规则）
-   │  定义：什么算「有效成绩」
-   ▼
-是否计榜 ──→ 排行榜（#7 增强回路）
-   │              │  提供：跨局可比目标
-   │              ▼
-   │         失败归因（#6 信息流）
-   │              │  提供：怎么变强的方向
-   ▼              ▼
-        技能↑ → 再挑战 → 回到起点（闭合）
-```
+### Checkpoint: P2（手机竖屏显示引导、不进入对局）
+- [ ] 手机竖屏视口：引导层可见、对局界面不可达
+- [ ] 平板横屏视口：引导层隐藏、正常进入
 
-**断链风险（若只做其中一两项）**：
-- 只做排行榜、不做双模式 → 开着辅助提示刷分也能上榜 → **榜单失去意义**（规则错位）
-- 只做失败归因、不做排行榜 → 知道问题但**看不到进步**（信息有了，动机没有）
-- 只做双模式、不做另两项 → 只是**多了一个没人用的开关**
+### Phase 3 — 验证与上线
 
-→ **实现顺序必须是：数据层 → 双模式（规则）→ 排行榜 + 失败归因（消费规则）**。
+- [ ] **Task 10 [M]** 移动端回归测试（`_tools/_touch.js`，复刻 E1–E8，接入 `_run_all.js`）
+- [ ] **Task 11 [S]** 全量回归 + 版本戳 + 部署 + 线上验证
 
-### 1.6 本次升级的结构性风险
+### Checkpoint: 完成
+- [ ] 平板横屏纯手势完整可玩、桌面零回归、线上可访问、移动端断言全 PASS
+
+---
+
+## 三、任务详情
+
+### Task 1: 移动端视口与触摸拦截 [S]
+**Description:** 改 `index.html` 的 viewport meta（加 `user-scalable=no, maximum-scale=1, viewport-fit=cover`），并在 CSS 给 `html, body, #stage, #cv` 设 `touch-action:none` + `overscroll-behavior:none`；HUD 内可交互元素（按钮 / range / 模式卡）单独 `touch-action:none`，纯展示面板 `.panel` 设 `pointer-events:none` 让出触摸区。
+
+**Acceptance criteria:**
+- [ ] viewport meta 含 `user-scalable=no` 与 `viewport-fit=cover`（禁止双指缩放、适配安全区）
+- [ ] `html, body, #stage, #cv` 四层均有 `touch-action:none` 与 `overscroll-behavior:none`
+- [ ] `#hudKeys` 文本块 `pointer-events:none`（消除报告 E5 的触摸死区）；`#btnUiToggle`/`btnMute`/`volRange`/模式卡仍 `auto` 且各自 `touch-action:none`
+- [ ] 桌面端 `#hudAux` 收放逻辑（ui-collapsed）不受影响
+
+**Verification:**
+- [ ] `node _smoke.js`：断言 viewport 字符串含 user-scalable=no；断言 CSS 四层 `touch-action:none`
+- [ ] 真浏览器注入触摸序列（Task 10）确认无 `pointercancel`
+
+**Dependencies:** None
+**Files:** `index.html`
+**Scope:** Small
+
+---
+
+### Task 2: Pointer Events 统一输入 [M]
+**Description:** 在 `setupInput` 中删除 `mousedown/mousemove/mouseup`，改为 `cv.addEventListener("pointerdown", …)` + `window` 上的 `pointermove/pointerup`。新增 `drag` 状态字段 `zone`（"hit"|"paddle"|null）。保留 `wheel`（桌面拍面）与全部 `keydown` 快捷键。`pointerup` 仅对非鼠标指针、且 zone==="hit" 时调 `doHit`，杜绝双触发。
+
+**Acceptance criteria:**
+- [ ] 无 `mousedown/mousemove/mouseup` 监听残留
+- [ ] 桌面鼠标拖拽仍触发 `doHit`（pointerType==="mouse" 路径覆盖）
+- [ ] 触摸拖拽触发 `doHit`，且 mouse+pointer 不会在同一拖拽里各调一次
+- [ ] `wheel` 拍面、`Shift/A/D`、`H/M/Tab/R/P/Esc` 行为与原版完全一致
+
+**Verification:**
+- [ ] `node _smoke.js`：断言源码无 `mousedown` 字符串、有 `pointerdown`；旧键盘/滚轮断言不回归
+- [ ] 桌面真浏览器：鼠标拖拽击球正常
+- [ ] Task 10 触摸序列：触摸拖拽触发 `doHit`
+
+**Dependencies:** Task 1
+**Files:** `game.js`
+**Scope:** Medium
+
+---
+
+### Task 3: doHit 量纲归一化 [M]
+**Description:** 新增 `normDrag(drag)` 在 `doHit` 入口把像素位移换算成与视口相关的归一值：`aim = clamp(dx/(0.30*vw), -0.85, 0.85)`、`lenN = clamp(len/(0.22*vmin), 0, 1)`、`speedN = clamp((len/secs)/(0.9*vmin), 0, 1)`。原 `dx/140`、`len/190`、`speed/1100` 替换为归一结果。系数以桌面（1920×1080）手感为基准校准，使现有桌面体验不退化。
+
+**Acceptance criteria:**
+- [ ] `doHit` 不再出现绝对像素常量 140/190/1100
+- [ ] 桌面真机（1920×1080）击球线路/力量手感与原版一致（回归测试覆盖 `aim` 映射区间）
+- [ ] 平板横屏（如 1180×820）下小幅拖拽即可达到合理 aim/power，不再需要「拖满全屏」
+
+**Verification:**
+- [ ] `node _smoke.js`：注入已知 dx/len 断言 `aim/lenN/speedN` 落在预期区间（多分辨率）
+- [ ] Task 10：iPad 横屏下中等拖拽回球成功
+
+**Dependencies:** Task 2
+**Files:** `game.js`
+**Scope:** Medium
+
+---
+
+### Task 4: 横屏布局适配 [S]
+**Description:** `resize3D` 额外绑定 `orientationchange` 事件（iOS Safari 旋转时不总触发 resize）；移动端 `matchMedia("(max-width:640px)")` 的 `#hudKeys` 隐藏规则扩展到触摸设备（改用 `@media (pointer:coarse)` 隐藏纯文本说明，因触屏无键盘）；确认 HUD 在平板横屏下不重叠。
+
+**Acceptance criteria:**
+- [ ] `orientationchange` 触发 `resize3D`（`CAM.aspect` 更新正确，无拉伸）
+- [ ] 触摸设备隐藏 `#hudKeys` 文本块（避免死区），但配置按钮/收起开关保留
+- [ ] 平板横屏（≥768px 宽）下 HUD 各面板 `getBoundingClientRect` 两两不重叠
+
+**Verification:**
+- [ ] `node _smoke.js`：断言 `resize3D` 注册了 `orientationchange`；断言粗指针下 `#hudKeys` 不渲染
+- [ ] `_aux_shot.js` 风格布局断言在 1180×820 下两两求交为 0
+
+**Dependencies:** Task 1
+**Files:** `game.js`, `index.html`
+**Scope:** Small
+
+---
+
+### Task 5: 双区手势 [M]
+**Description:** `pointerdown` 命中测试分流：若 `clientX < 0.45*vw` 设 `drag.zone="paddle"` 并记录 `startY/startAngle`；否则 `drag.zone="hit"` 走原击球流程。`pointermove`：paddle 区 → `G.paddleAngle = clamp(startAngle + (startY - y)/paddleSpan, -1, 1)`（上拖亮拍、下拖压拍）；hit 区 → 更新 `drag.x/y`。`pointerup`：hit 区按 Task 2 流程调 `doHit`。
+
+**Acceptance criteria:**
+- [ ] 右区（>45% 宽）拖拽触发 `doHit`，线路/力量由拖拽方向/速度决定
+- [ ] 左区（<45% 宽）纵向拖拽改变 `G.paddleAngle`，范围 [-1,1] 且方向正确
+- [ ] 两个区同时各有一次独立手势时不串扰（各自 zone 隔离）
+- [ ] 桌面鼠标仍走 hit 路径（zone 由 clientX 判定，鼠标同样适用）
+
+**Verification:**
+- [ ] Task 10：右区 swipe → `G.hitDone` 置位；左区纵向拖 → `G.paddleAngle` 单调变化
+- [ ] `node _smoke.js`：新增命中测试单测（clientX 分桶）
+
+**Dependencies:** Task 2, Task 3
+**Files:** `game.js`
+**Scope:** Medium
+
+---
+
+### Task 6: 拍面辅助跟随 [M]
+**Description:** 在游戏主循环每帧（incoming 阶段）：若 `G.assist` 为真，设 `G.paddleAngle = correctTiltFor(G.spin)`（实时跟随当前旋转的正确拍面）；辅助态下左区拖拽不覆盖该自动值（或仅作微调偏移，由实现选定，本计划取「辅助态禁用左区手动」最简方案）。挑战模式 `G.assist=false` → 左区完全手动控制拍面。
+
+**Acceptance criteria:**
+- [ ] 辅助开 + 来球为「上旋」→ `G.paddleAngle` 自动趋近压拍负值；「下旋」→ 亮拍正值
+- [ ] 辅助开时左区拖拽不影响拍面（自动值优先）
+- [ ] 挑战模式（`setMode("challenge")` 后 `G.assist=false`）左区拖拽可自由设拍面，自动跟随关闭
+- [ ] 自动跟随不破坏 `doHit` 的 `tiltErr` 计算（拍面数值真实进入判定）
+
+**Verification:**
+- [ ] `node _smoke.js`：断言辅助态每帧 `paddleAngle===correctTiltFor(spin)`；挑战态断言左区拖拽改变 paddleAngle
+- [ ] Task 10：辅助开 iPad 横屏，不同旋转来球下拍面自动变化且回球成功
+
+**Dependencies:** Task 5
+**Files:** `game.js`
+**Scope:** Medium
+
+---
+
+### Task 7: 触屏控制簇 + 浮层可达 [M]
+**Description:** 新增一组触屏控制按钮（替代键盘 Esc/P/R/H/Shift）：暂停、重开、辅助开关、正反手切换。位置选不挡球台处（如右下控制簇或顶部贴近 `#topLinks` 下方），`pointer-events:auto` + `touch-action:none`，绑定 `togglePause()/restart()/辅助切换(复用 H 键逻辑，挑战模式拦截)/G.backhand=!G.backhand`。同时确认开始页模式卡、结束页「再来一局/分享海报」在触摸下可点（现有用 click，需确保 `touch-action` 不挡）。
+
+**Acceptance criteria:**
+- [ ] 四个触屏按钮均可见可点，且不与 `#topLinks`/`#hudAux` 重叠
+- [ ] 暂停按钮 → `togglePause()`；重开 → `restart()`（仅对局中）；辅助按钮 → 复用 H 逻辑（挑战模式给提示不切换）；正反手 → `G.backhand` 翻转且 HUD `#uiMode` 同步
+- [ ] 开始页模式卡、结束页按钮在触摸注入下可触发对应回调
+- [ ] 桌面端不显示这组触屏按钮（仅在 coarse pointer 下出现，避免桌面冗余）
+
+**Verification:**
+- [ ] `node _smoke.js`：断言四个按钮 DOM 存在且绑定了处理函数；断言粗指针下可见、细指针下隐藏
+- [ ] Task 10：触摸点击各按钮验证行为
+- [ ] 桌面真浏览器：四个按钮不可见、键盘仍生效
+
+**Dependencies:** Task 4, Task 6
+**Files:** `index.html`, `game.js`
+**Scope:** Medium
+
+---
+
+### Task 8: 设备/方向门控 [M]
+**Description:** 新增 `isSupported()` 判定：`!matchMedia("(pointer:coarse)").matches`（桌面）OR（coarse && `min-width:768px` && `orientation:landscape`）（平板横屏）→ 放行。否则拦截。开局前与每次 `orientationchange/resize` 都重新判定。
+
+**Acceptance criteria:**
+- [ ] 桌面（fine pointer）→ 放行
+- [ ] 平板（coarse + ≥768px）+ 横屏 → 放行
+- [ ] 手机（coarse，任意方向）→ 拦截
+- [ ] 平板竖屏（coarse + ≥768px + portrait）→ 拦截
+
+**Verification:**
+- [ ] `node _smoke.js`：用桩 matchMedia 注入四种组合，断言 `isSupported()` 返回正确
+- [ ] Task 10：手机竖屏视口 `isSupported()===false`
+
+**Dependencies:** Task 4
+**Files:** `game.js`
+**Scope:** Medium
+
+---
+
+### Task 9: 「请横屏」引导层 [S]
+**Description:** 新增全屏遮罩 `#rotateHint`（默认隐藏），当 `!isSupported()` 时显示，文案「请将设备横置使用平板体验」；`isSupported()` 为真时隐藏。监听 `orientationchange`/`resize` 即时切换。遮罩 `z-index` 高于 HUD 但低于开始页之上（或覆盖全屏），`pointer-events:auto` 阻断误触。
+
+**Acceptance criteria:**
+- [ ] 非支持设备/方向 → `#rotateHint` 可见且覆盖全屏，对局界面不可达
+- [ ] 旋转到平板横屏 → 遮罩立即隐藏，正常进入
+- [ ] 桌面端永不显示该遮罩
+- [ ] 遮罩自身 `touch-action:none`，旋转过程不触发页面滚动
+
+**Verification:**
+- [ ] `node _smoke.js`：断言 `!isSupported()` 时 `#rotateHint` 有可见类、`isSupported()` 时无
+- [ ] Task 10：手机竖屏视口遮罩可见；切横屏后隐藏
+
+**Dependencies:** Task 8
+**Files:** `index.html`, `game.js`
+**Scope:** Small
+
+---
+
+### Task 10: 移动端回归测试 [M]
+**Description:** 新建 `_tools/_touch.js`（Playwright headless Chromium + SwiftShader），用 CDP `Input.dispatchTouchEvent` / `page.touchscreen` 注入真实触摸：① 四层 touch-action 下触摸序列无 `pointercancel`（E1/E2）；② 单指右区 swipe 触发 `doHit` 且能回球（E3/E4）；③ 双区分流正确（E4）；④ 竖屏 NDC 出屏/横屏 FOV 正常（E5，用视口切换验证）；⑤ 可用触摸区比例（E7）；⑥ 量纲归一后手机精度合理（E8）。复用 `_probe_touch*.js` 方法论，把 5 个探针归档到 `_tools/` 作参考。接入 `_run_all.js` 新增「移动端手势」关。
+
+**Acceptance criteria:**
+- [ ] `_touch.js` 覆盖 E1–E8 中可自动化项（至少 6 条），逐条 PASS
+- [ ] 断言非假绿：触摸触发的是真实 `doHit` 副作用（如 `G.hitDone` / `rally` 变化），而非只查字符串
+- [ ] `_run_all.js` 新增 `run("移动端手势", "_touch.js")` 且全绿
+- [ ] 旧 71 项冒烟 + 十一关不回归
+
+**Verification:**
+- [ ] `node _run_all.js` 含移动端手势关且 PASS
+- [ ] 人工复核 `_shots/` 下平板横屏截图（双区手势对局画面）
+
+**Dependencies:** Task 1–9
+**Files:** `_tools/_touch.js`, `_tools/_probe_touch*.js`（归档）, `_tools/_run_all.js`
+**Scope:** Medium
+
+---
+
+### Task 11: 全量回归 + 部署 [S]
+**Description:** 跑全套回归（语法 → 物理 61 → 数值一致性 4320 → 冒烟 71 → 截图/海报 → 声学 → 线上 → 移动端手势），刷新版本戳，部署，线上端到端验证。
+
+**Acceptance criteria:**
+- [ ] `node _run_all.js` 全关（含新增移动端手势关）绿
+- [ ] `_stamp.py` 刷版本戳且 `index.html` 引用一致
+- [ ] 线上部署成功，`_live_verify.js --live` 全 PASS，含新增移动端可达性探针
+
+**Verification:**
+- [ ] 线上 https://spin-pingpong.app.workbuddy.host/ 用平板横屏视口可纯手势对局
+
+**Dependencies:** Task 10
+**Files:** `index.html`（版本戳）
+**Scope:** Small
+
+---
+
+## 四、风险与缓解
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| 排行榜触发「富者愈富」式挫败（榜位全被高分占满，新手永远进不去） | 高 | 榜单**以自比为主**（个人最佳 + 历史前十），不做全局排名 |
-| 练习模式变成「真正的游戏」，挑战模式无人问津 → 计榜数据稀薄 | 中 | 练习模式成绩达标后**主动邀请**进入挑战模式，而不是让玩家自己选 |
-| GitHub 入口与左上品牌行形成视觉争夺 | 中 | 放**右上角**、低饱和度图标、**hover 才出 tooltip**，常态不抢视线 |
-| 开源后被 fork 改得更好 | 低 | MIT 保留最大自由度；README 讲清差异化（判定可信）—— 代码可抄，43 项断言与 4320 条数值一致性的工程可信度不易抄 |
-| 现有 README（41KB）是深度技术文档，开源后新手看不懂 | 高 | **保留原文档为 `docs/TECHNICAL.md`，另写一份面向使用者的 `README.md`** |
-
-### 1.7 心法检查（《系统之美》15 条中相关的 4 条）
-
-- **法则 5「关注重要的而非容易衡量的」**：不要只堆「回球数」这类易衡量指标，要加「落点精准率」这种更接近技巧本质的
-- **法则 15「不要降低善的标准」**：不用降难度留人（正是基模 6）
-- **法则 2「把心智模式展现在阳光下」**：失败归因统计本质就是**把系统的判断展示给玩家**
-- **法则 12「扩展时间范围」**：排行榜记录跨局历史，把玩家的时间视野从「这一局」拉长到「第 10 局」
-
----
-
-## 二、架构决策
-
-### 决策 1：实现顺序 = 数据层 → 规则层 → 展示层
-
-不从「UI 长什么样」开始，而从「数据从哪来」开始。理由：三项改动**共享数据契约**
-（排行榜要按模式分表、失败归因要按模式统计），先定数据契约，后两项才不返工。
-
-### 决策 2：localStorage 数据契约（一次定清，避免后续迁移）
-
-```js
-fpp_history      // JSON 数组，最多 10 局，按 score 降序
-                 // [{rally, score, level, mode, acc, ts}]  mode: "practice" | "challenge"
-fpp_best_level   // JSON 对象，每档难度个人最佳回球数 {1:12, 2:9, ...}（仅挑战模式）
-fpp_mode         // "practice" | "challenge"，默认 "practice"
-fpp_failstats    // 本局失败归因（不持久化，仅内存 G.failStats）
-```
-
-**兼容性处理**：现有 `fpp_best`（旧最佳）与 `fpp_best_score` 保留读取，首次启动时迁移进
-`fpp_history`，不丢老玩家的纪录。
-
-### 决策 3：失败归因的 5 个桶（对齐已有 `reason()` 分类）
-
-现有 `fail()` 已有 6 个 tag（漏球/没打实/下网/出边线/出界/没过网）+ `reason()` 的四类归因，
-统一收敛为玩家能理解的 5 桶：
-
-| 桶 | 判定依据 | 文案 |
-|---|---|---|
-| `吃旋转` | `reason()` 返回含「吃旋转」 | 没判断对来球的旋转方向 |
-| `拍面偏差` | `tiltErr` 超阈值 | 拍面压太狠 / 太亮 |
-| `时机早或晚` | `dt` 超阈值 | 击球太早 / 太晚 |
-| `力量与落点` | 出界 / 没过网 / 出边线 | 力量太大或太小 |
-| `没打到球` | tag 为「漏球」「没打实」 | 挥拍幅度不够 / 完全漏掉 |
-
-### 决策 4：双模式的差异必须**只有一处**（辅助提示），其余全同
-
-避免出现「练习模式和挑战模式是两个游戏」。唯一差异：
-- **练习模式**：辅助提示默认开（H 可关）、**不计榜**、海报不标「新纪录」
-- **挑战模式**：辅助提示强制关（H 无效）、**计榜**、海报可标「新纪录」
-
-### 决策 5：GitHub 入口放右上角，只做 2 个图标
-
-截图里是 3 个图标（GitHub / 地球 / 月亮）。**月亮（主题切换）不实现** —— 本游戏是深色单一
-主题，加主题切换等于加一个假功能。实现 GitHub（仓库，带「给项目点个 Star ⭐」tooltip）+ 地球（在线试玩）。
-
-### 决策 6：README 双文档策略
-
-- `README.md` — 面向使用者/潜在 Star 的人：图文结合、30 秒看懂、含截图 + 自制示意图
-- `docs/TECHNICAL.md` — 原 41KB 技术文档原样迁移（架构、踩坑、回归体系）
-
----
-
-## Task List
-
-### Phase 1: 数据层（Foundation）
-
-- [ ] **Task 1 [S]** 失败归因数据采集
-- [ ] **Task 2 [S]** 排行榜与历史数据层
-
-### Checkpoint: 数据层
-- [ ] 语法检查通过、冒烟测试不回归
-
-### Phase 2: 规则层 + 展示层（Core）
-
-- [ ] **Task 3 [M]** 双模式显式化（规则前提，先做）
-- [ ] **Task 4 [M]** 失败归因展示（结束页）
-- [ ] **Task 5 [M]** 本地排行榜展示
-
-### Checkpoint: 三项玩法改动
-- [ ] 本地可玩、三模式数据分流正确、断言全过
-
-### Phase 3: 开源与传播
-
-- [ ] **Task 6 [S]** 右上角 GitHub 入口 + Star tooltip
-- [ ] **Task 7 [M]** README 图文结合重写 + 技术文档迁移
-- [ ] **Task 8 [S]** 仓库整理与公开发布（MIT / .gitignore / _tools/ 归档 / gh repo create）
-
-### Checkpoint: 开源
-- [ ] 仓库可访问、README 图片正常显示、线上入口可跳转
-
-### Phase 4: 验证与上线
-
-- [ ] **Task 9 [M]** 测试更新（冒烟 + 线上探针）
-- [ ] **Task 10 [S]** 全量回归 + 刷新版本戳 + 部署 + 线上验证
-
-### Checkpoint: 完成
-- [ ] 全部验收标准达成、线上可玩、仓库可访问
-
----
-
-## 任务详情
-
-### Task 1: 失败归因数据采集 [S]
-
-**Description:** 在 `fail()` 里把每次失败归类到 5 个桶之一，累计到 `G.failStats`，
-供结束页展示「本局失败构成」。
-
-**Acceptance criteria:**
-- [ ] 5 个桶（吃旋转/拍面偏差/时机早或晚/力量与落点/没打到球）各有明确判定分支
-- [ ] 每局开始（`restart`）时清零
-- [ ] 归类逻辑是**纯函数**（输入 tag/tiltErr/dt，输出桶名），可被 Node 桩测直接调用
-
-**Verification:**
-- [ ] `node _smoke.js` 能读到 `classifyFail` 并验证 6 种 tag → 5 桶映射
-- [ ] 手动：故意打 5 种不同的坏球，确认计数正确
-
-**Dependencies:** None
-
-**Files:** `game.js`
-
-**Estimated scope:** Small（1 文件）
-
----
-
-### Task 2: 排行榜与历史数据层 [S]
-
-**Description:** 实现 localStorage 数据契约（见架构决策 2），含容错与旧数据迁移。
-
-**Acceptance criteria:**
-- [ ] `pushHistory(rec)` 写入并保持最多 10 条、按 score 降序
-- [ ] `saveBestLevel(level, rally)` / `loadBestLevel()` 按档位记录（仅挑战模式）
-- [ ] 所有读写包 `try/catch`，JSON 损坏时回退默认值**不抛异常**
-- [ ] 首次启动能把旧的 `fpp_best` / `fpp_best_score` 迁移进 `fpp_history`
-
-**Verification:**
-- [ ] Node 桩测：喂损坏 JSON（如 `"{{{"`）确认不崩
-- [ ] Node 桩测：写入 15 条确认只留 10 条且有序
-
-**Dependencies:** None
-
-**Files:** `game.js`
-
-**Estimated scope:** Small（1 文件）
-
----
-
-### Task 3: 双模式显式化 [M]
-
-**Description:** 开始页改为「练习模式 / 挑战模式」二选一卡片；`G.mode` 持久化；
-模式决定辅助提示与计榜资格。这是另两项的规则前提，故先做。
-
-**Acceptance criteria:**
-- [ ] 开始页有两张可选卡片，显示各自规则差异（辅助提示 / 是否计榜）
-- [ ] 选练习模式 → `G.assist = true`，H 键可关，成绩**不进** `fpp_history` / `fpp_best_level`
-- [ ] 选挑战模式 → `G.assist = false`，H 键无效（按钮置灰或提示不可用），成绩**进榜**
-- [ ] 选择持久化到 `fpp_mode`，下次打开记住
-- [ ] 结束页明确显示本局所属模式
-
-**Verification:**
-- [ ] `node _smoke.js`：断言两模式下 `G.assist` 初值与计榜分流
-- [ ] 浏览器：两种模式各玩一局，确认榜单只记录挑战模式
-
-**Dependencies:** Task 2
-
-**Files:** `game.js`, `index.html`
-
-**Estimated scope:** Medium（2 文件）
-
----
-
-### Task 4: 失败归因展示 [M]
-
-**Description:** 结束页新增「本局失败构成」区块，列出各桶次数并标出占比最高的一项为「本局主要问题」。
-
-**Acceptance criteria:**
-- [ ] 结束页显示 5 桶中**次数 > 0** 的项，按次数降序
-- [ ] 次数最多的项标注「本局主要问题」，且视觉上明显区别于其他项
-- [ ] 一局内若只失败 1 次，仍正常显示（不出现空区块）
-- [ ] 与「距个人最佳」区块视觉上不冲突（布局不重叠）
-
-**Verification:**
-- [ ] `node _smoke.js`：断言 DOM 含归因容器、且「主要问题」判定取最大值
-- [ ] 浏览器截图：观察真实失败后的结束页渲染
-
-**Dependencies:** Task 1, Task 3
-
-**Files:** `game.js`, `index.html`
-
-**Estimated scope:** Medium（2 文件）
-
----
-
-### Task 5: 本地排行榜展示 [M]
-
-**Description:** 结束页展示「距个人最佳还差 N 球」+ 历史前十列表；HUD 最佳值按模式区分。
-
-**Acceptance criteria:**
-- [ ] 结束页有「距个人最佳还差 N 球」文案（已破纪录时改为「已刷新个人最佳」）
-- [ ] 历史前十列表：显示名次、分数、回球数、所属模式，本局条目高亮
-- [ ] 首次游玩（无历史）时，榜单区块**整体不渲染**（而不是显示空表）
-- [ ] HUD 的「最佳」在练习/挑战模式下显示各自的数值
-
-**Verification:**
-- [ ] `node _smoke.js`：断言排序正确、差值计算正确、无历史时不渲染
-- [ ] 浏览器：连续玩 3 局后确认榜单累积并高亮本局
-
-**Dependencies:** Task 2, Task 3
-
-**Files:** `game.js`, `index.html`
-
-**Estimated scope:** Medium（2 文件）
-
----
-
-### Checkpoint: 三项玩法改动
-- [ ] `node _syntax.js` 全绿
-- [ ] `node _smoke.js` 43 项旧断言不回归
-- [ ] 三种状态（无历史 / 练习模式 / 挑战模式）手动验证通过
-- [ ] **人工复核后再进入 Phase 3**
-
----
-
-### Task 6: 右上角 GitHub 入口 [S]
-
-**Description:** 网页右上角加图标组：GitHub（带 hover tooltip「给项目点个 Star ⭐」）+ 地球（在线试玩）。
-
-**Acceptance criteria:**
-- [ ] 两个图标在右上角横排，不遮挡左上品牌行与中间 HUD
-- [ ] hover GitHub 图标时显示 tooltip 文案「给项目点个 Star ⭐」
-- [ ] 点击 GitHub 图标新标签打开 `https://github.com/huangluke89757/spin-table-tennis`
-- [ ] 图标常态低饱和度，不抢球台视线
-- [ ] 与 `#hudScore` 的收放逻辑互不干扰（Tab 收起面板时图标仍在）
-
-**Verification:**
-- [ ] `node _smoke.js`：断言 DOM 含 GitHub 入口且 href 指向正确仓库
-- [ ] 浏览器截图：确认位置与 tooltip
-
-**Dependencies:** Task 8（需要仓库地址存在）
-
-**Files:** `index.html`, `game.js`
-
-**Estimated scope:** Small（2 文件）
-
----
-
-### Task 7: README 图文结合重写 + 技术文档迁移 [M]
-
-**Description:** 把现有 41KB 技术 README 迁到 `docs/TECHNICAL.md`；新写面向使用者的 `README.md`。
-
-**Acceptance criteria:**
-- [ ] 新 `README.md` 含 **≥4 张图**（开始页截图、对局截图、分享海报、1 张自制原理/流程图）
-- [ ] 首屏 3 行内说清「这是什么、怎么玩、在哪玩」
-- [ ] 有「差异化」章节，明写竞品调研结论：**判定可信**（物理内核 + 回归测试规模）与**失败原因复盘**
-- [ ] 有快捷键表、本地运行方法（双击 index.html）、测试方法
-- [ ] 原技术文档完整保留到 `docs/TECHNICAL.md`，无内容丢失
-- [ ] 图片路径使用相对路径（`docs/images/xxx.png`）确保 GitHub 上能显示
-
-**Verification:**
-- [ ] 本地用浏览器打开 README 渲染预览（或 `gh repo view --web` 后肉眼确认图片加载）
-- [ ] 逐张确认图片文件确实存在于 `docs/images/`
-
-**Dependencies:** Task 5（截图需含新功能）
-
-**Files:** `README.md`, `docs/TECHNICAL.md`, `docs/images/*`
-
-**Estimated scope:** Medium（多文件 + 图片产出）
-
----
-
-### Task 8: 仓库整理与公开发布 [S]
-
-**Description:** 归档测试脚本、加 MIT License 与 .gitignore、初始化 git、创建公开仓库并 push。
-
-**Acceptance criteria:**
-- [ ] 运行必需文件（`index.html` / `game.js` / `poster.js` / `vendor/`）留在根目录
-- [ ] 20+ 个 `_xxx.js/_py` 测试脚本移入 `_tools/`，且 `_run_all.js` 内的路径引用同步更新
-- [ ] `LICENSE` 为 MIT，版权年为 2026
-- [ ] `.gitignore` 排除 `_shots/`、`_report_shots/`、`node_modules/`
-- [ ] 仓库 `huangluke89757/spin-table-tennis` 创建为 **public** 并 push 成功
-
-**Verification:**
-- [ ] `node _run_all.js` 在移动脚本后仍全绿（证明路径引用已修好）
-- [ ] `gh repo view huangluke89757/spin-table-tennis` 能读到仓库信息
-
-**Dependencies:** Task 7
-
-**Files:** `.gitignore`, `LICENSE`, `_tools/*`, `_run_all.js`
-
-**Estimated scope:** Small（配置 + 目录移动）
-
----
-
-### Checkpoint: 开源
-- [ ] 仓库公开可访问、README 图片正常
-- [ ] 本地 `_run_all.js` 全绿
-- [ ] **人工确认仓库内容后**再部署线上
-
----
-
-### Task 9: 测试更新 [M]
-
-**Description:** 为三项新功能与 GitHub 入口补断言，本地与线上双层覆盖。
-
-**Acceptance criteria:**
-- [ ] `_smoke.js` 新增断言：失败归因 5 桶映射、排行榜读写与容错、双模式计榜分流、GitHub 入口 DOM
-- [ ] `_live_verify.js` 新增线上探针：仓库链接可达、双模式 DOM 存在、归因容器存在
-- [ ] 新断言**不能是假绿**（例如不能只查「字符串存在于源码」就算过，要验证逻辑）
-
-**Verification:**
-- [ ] `node _smoke.js` 新增断言全 PASS、旧 43 项不回归
-- [ ] `node _live_verify.js` 全 PASS
-
-**Dependencies:** Task 5, Task 6
-
-**Files:** `_tools/_smoke.js`, `_tools/_live_verify.js`
-
-**Estimated scope:** Medium（2 文件）
-
----
-
-### Task 10: 全量回归 + 部署 + 线上验证 [S]
-
-**Description:** 跑全套回归、刷新版本戳、部署、线上端到端验证。
-
-**Acceptance criteria:**
-- [ ] `node _run_all.js` 十一关全绿
-- [ ] `_stamp.py` 刷出版本戳且 `index.html` 引用一致
-- [ ] 线上部署成功、`_live_verify.js --live` 全 PASS
-
-**Verification:**
-- [ ] 线上打开 `https://spin-pingpong.app.workbuddy.host/` 确认新功能可见
-
-**Dependencies:** Task 9
-
-**Files:** `index.html`（版本戳）
-
-**Estimated scope:** Small
-
----
-
-## Risks and Mitigations
-
-| Risk | Impact | Mitigation |
-|---|---|---|
-| 移动测试脚本到 `_tools/` 后，脚本内的相对路径（`__dirname`、`_shots/`）全部失效 | **高** | 移动后**立即**跑 `_run_all.js` 验证；若失效则统一改为 `path.join(__dirname, "..")` |
-| 排行榜与旧 `fpp_best` 数据冲突，老玩家纪录丢失 | 中 | 首次启动做一次性迁移，迁移后再写新键 |
-| 双模式让 H 键行为分叉，导致既有 H 键断言失效 | 中 | 断言改为「按模式断言」，而非断言「H 一定可关」 |
-| GitHub 入口 HTTPS 外链在离线场景点了没反应 | 低 | 正常预期；不做额外处理，但 README 里说明需联网 |
-| README 图片用绝对路径 → GitHub 上全裂 | 中 | 强制相对路径，且 push 后实际打开仓库页确认 |
-
-## Open Questions
-
-- 暂无。四项关键决策（仓库名 / 协议 / 仓库结构 / 发布时机）已在开工前与用户对齐确认。
-
-## Task List 位置
-
-本地任务清单见同目录 `todo.md`（本项目未使用外部 tracker）。
+| 删除 mouse 监听后桌面拖拽失效（双触发修复过头） | 高 | Task 2 保留 pointerType==="mouse" 路径；Task 10 含桌面鼠标回归 |
+| 量纲归一系数调偏，桌面手感退化 | 中 | Task 3 以 1920×1080 为校准基线，冒烟断言覆盖 aim 区间 |
+| iOS Safari `orientationchange` 不全触发 → 横屏后画面拉伸 | 中 | Task 4 同时绑 `resize`+`orientationchange`，并监听 `visualViewport` |
+| 双区命中测试与 HUD 按钮区域重叠（左下拍面栏/右下配置） | 中 | Task 5 左区阈值 0.45 与 HUD 位置错开；Task 7 按钮独占区域 |
+| 宽屏手机横置误放行（CSS 宽≥768） | 低 | 决策 6 已记为可接受；如需严格排除改用 UA 启发式（待定） |
+| 真机 GPU 帧率 / iOS 触摸节流未验证（headless 局限） | 中 | 报告已标注；上线后真机抽检，必要时降 pixelRatio |
+| 触摸按钮与现有 `#topLinks`/`#hudAux` 层叠冲突 | 中 | Task 7 明确独占区域 + `z-index` 规划，布局断言防重叠 |
+
+## 五、开放问题
+- 宽屏手机横屏是否需严格拦截？（当前规则会放行，待用户确认）
+- 辅助开时左区拖拽：完全禁用 / 仅作微调偏移？（本计划取「禁用」最简方案）
+- 触屏控制簇位置：右下独立簇 vs 顶部贴近 `#topLinks`？（待布局断言后定）
+
+## 六、Task List 位置
+本地任务清单见同目录 `todo.md`。旧一轮（留存+开源）计划已归档为 `plan-retention-github.md` / `todo-retention-github.md`。

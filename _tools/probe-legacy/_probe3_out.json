@@ -1,0 +1,79 @@
+{
+  "touchSingle": [
+    {
+      "k": 0,
+      "waitedFor": "ideal",
+      "dragMs": 1331,
+      "spin": "轻下旋",
+      "phase": "incoming",
+      "hitDone": false,
+      "rally": 0,
+      "msg": "",
+      "sub": "",
+      "diag": [
+        "pointerCANCEL"
+      ],
+      "hits": 0
+    },
+    {
+      "k": 1,
+      "skip": "no incoming"
+    }
+  ],
+  "touchTwoFinger": {
+    "waitedFor": "ideal",
+    "faceAngleMid": 0.57,
+    "beforeUp": {
+      "p": "incoming",
+      "i": true,
+      "angle": 0.57
+    },
+    "afterHitLift": {
+      "phase": "miss",
+      "ideal": true,
+      "hitDone": false,
+      "rally": 0,
+      "score": 0,
+      "msg": "漏球",
+      "sub": "没打到球",
+      "spin": "轻上旋",
+      "angle": 0.75,
+      "running": true,
+      "diag": [
+        "pointerCANCEL",
+        "faceDown",
+        "hitDown phase=incoming running=true",
+        "faceUp angle=0.75"
+      ],
+      "hits": 0
+    },
+    "final": {
+      "phase": "miss",
+      "ideal": true,
+      "hitDone": false,
+      "rally": 0,
+      "score": 0,
+      "msg": "漏球",
+      "sub": "没打到球",
+      "spin": "轻上旋",
+      "angle": 0.75,
+      "running": true,
+      "diag": [
+        "pointerCANCEL",
+        "faceDown",
+        "hitDown phase=incoming running=true",
+        "faceUp angle=0.75",
+        "hitUp len=87 v=84 phase=miss guard=false"
+      ],
+      "hits": 0
+    },
+    "log": [
+      "pointerCANCEL",
+      "faceDown",
+      "hitDown phase=incoming running=true",
+      "faceUp angle=0.75",
+      "hitUp len=87 v=84 phase=miss guard=false"
+    ]
+  },
+  "errs": []
+}
