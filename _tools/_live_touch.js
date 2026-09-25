@@ -81,7 +81,13 @@ const INSTALL = () => {
     const ctx = await browser.newContext(opts);
     const page = await ctx.newPage();
     page.on("pageerror", e => pageErrs.push(e.message));
-    await page.goto(URL, { waitUntil: "load", timeout: 45000 });
+    /* 带随机参数打开，绕开 CDN 边缘缓存。
+     * 为什么必须这样：部署后 CDN 各节点的收敛不同步 —— 实测同一 URL 无 query 时
+     * 返回旧 index.html（旧版本戳 → 连带加载旧 game.js），带时间戳才拿到新产物。
+     * 不绕过的话，「部署已生效但缓存没收敛」会被误判成「代码没改对」，
+     * 而真正修错代码时又可能被旧缓存蒙混过去 —— 两种误判都危险。
+     * 版本一致性另由下方 A 段的断言单独把关（那才是判断部署是否到位的地方）。 */
+    await page.goto(URL + "?t=" + Date.now(), { waitUntil: "load", timeout: 45000 });
     await page.waitForTimeout(1600);
     return { ctx, page };
   }
@@ -140,9 +146,20 @@ const INSTALL = () => {
         coarseFn: typeof isCoarse === "function",
         supportedFn: typeof isSupported === "function",
         gateFn: typeof applySupportGate === "function",
+        /* 部署一致性：线上源码里必须有新版判据常量。
+         * 这一条把「部署到位」与「功能行为」分开断言 —— 若它失败，
+         * 后面所有行为断言的红都是「旧产物」导致，不是代码写错。 */
+        hasAspectJudge: (() => { try { return typeof MIN_PLAY_ASPECT === "number"; }
+                                 catch (e) { return false; } })(),
+        fnHas768: (() => { try { return isSupported.toString().indexOf("768") >= 0; }
+                           catch (e) { return true; } })(),
       };
     });
 
+    ok("线上产物为新版门控（有 MIN_PLAY_ASPECT、函数体已无 768 门槛）",
+       a.hasAspectJudge === true && a.fnHas768 === false,
+       "MIN_PLAY_ASPECT=" + a.hasAspectJudge + " 含768=" + a.fnHas768 +
+       "（若失败说明 CDN 仍返回旧产物，不是代码问题）");
     ok("线上存在竖屏引导层 DOM", a.hasHint === true);
     ok("线上引导层层级 z-index=30、可拦截触摸", a.hintZ === "30" && a.hintPE === "auto",
        "z=" + a.hintZ + " pointer-events=" + a.hintPE);
@@ -248,33 +265,75 @@ const INSTALL = () => {
     /* B4. 线上控制簇不得侵入球的下落走廊
      * 本轮的部署产物里踩过这个坑：控制簇原本放屏幕底部居中，正好压住球的落点区
      * （第一视角下球近身时投影在屏幕下方）。CSS 改动不会换脚本 URL，
-     * 版本戳证明不了这条，只能在线上实地量。 */
-    await page.evaluate(() => restart());
-    await page.waitForTimeout(360);
-    const corridor = await page.evaluate(() => new Promise(res => {
-      const s = [];
-      const t0 = Date.now();
-      const w = () => {
-        if (G.phase === "incoming" && G.ball) {
-          const v = new THREE.Vector3(G.ball.x, G.ball.y, G.ball.z).project(CAM);
-          s.push({ z: G.ball.z, x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight });
-        }
-        if ((G.phase !== "incoming" && s.length > 5) || Date.now() - t0 > 5000) return res(s);
-        requestAnimationFrame(w);
-      };
-      w();
-    }));
-    const near = corridor.filter(s => s.z > 0.3 && s.z <= 1.2);
+     * 版本戳证明不了这条，只能在线上实地量。
+     *
+     * 采样必须带重试：headless SwiftShader 与别的浏览器实例抢 GPU 时会掉帧，
+     * 一局的近身段可能整段采不到（实测出现过「近身样本 0 个」而功能完全正常）。
+     * 那属于环境抖动不是功能坏，重试两轮再判，避免并行跑回归时出假红。 */
+    let near = [], cMinX = 0, cMaxX = 0;
+    for (let round = 0; round < 3; round++) {
+      await page.evaluate(() => restart());
+      await page.waitForTimeout(360);
+      const corridor = await page.evaluate(() => new Promise(res => {
+        const s = [];
+        const t0 = Date.now();
+        const w = () => {
+          if (G.phase === "incoming" && G.ball) {
+            const v = new THREE.Vector3(G.ball.x, G.ball.y, G.ball.z).project(CAM);
+            s.push({ z: G.ball.z, x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight });
+          }
+          if ((G.phase !== "incoming" && s.length > 5) || Date.now() - t0 > 5000) return res(s);
+          requestAnimationFrame(w);
+        };
+        w();
+      }));
+      near = corridor.filter(s => s.z > 0.3 && s.z <= 1.2);
+      if (near.length >= 3) break;
+    }
     const fy = await page.evaluate(() => {
       const r = document.getElementById("touchCtl").getBoundingClientRect();
       return { l: r.left, r: r.right };
     });
-    const cMinX = near.length ? Math.min(...near.map(s => s.x)) : 0;
-    const cMaxX = near.length ? Math.max(...near.map(s => s.x)) : 0;
+    cMinX = near.length ? Math.min(...near.map(s => s.x)) : 0;
+    cMaxX = near.length ? Math.max(...near.map(s => s.x)) : 0;
     ok("线上控制簇不侵入球的下落走廊（水平分离 ≥20px）",
        near.length >= 3 && (cMaxX < fy.l - 20 || cMinX > fy.r + 20),
        "近身样本 " + near.length + " 个　球走廊 x[" + Math.round(cMinX) + "," + Math.round(cMaxX) +
        "]　控制簇 x[" + Math.round(fy.l) + "," + Math.round(fy.r) + "]");
+    await ctx.close();
+  }
+
+  /* ============ B2 · 手机横屏：引导层必须放行且按钮可达 ============
+   * 这条是缺陷专项。原先的 B 场景用 900×420（宽 ≥ 768），恰好绕过了
+   * 「手机横屏被误拦」——真机 iPhone 12/13/14 横屏是 750×342，旧判据判不支持。
+   * 线上探针必须覆盖这条，否则同类缺陷下次照样会漏。 */
+  console.log("\n=== B2 · 手机横屏，引导层放行 + 开始按钮可达 ===");
+  {
+    const { ctx, page } = await open(750, 342, true);
+    await page.waitForTimeout(500);
+    const r = await page.evaluate(() => {
+      const el = id => document.getElementById(id);
+      const rc = el("startBtn").getBoundingClientRect();
+      const hint = el("rotateHint");
+      return {
+        hintOn: hint.classList.contains("on"),
+        supported: typeof isSupported === "function" ? isSupported() : null,
+        aspect: +(innerWidth / innerHeight).toFixed(3),
+        btnInView: rc.top >= 0 && rc.bottom <= innerHeight && rc.left >= 0 && rc.right <= innerWidth,
+        btnVis: getComputedStyle(el("startBtn")).display !== "none",
+        ctl: getComputedStyle(el("touchCtl")).display,
+        hudTouchOn: el("hud").classList.contains("touch-on"),
+        ghVisible: (() => { const g = el("ghLink").getBoundingClientRect();
+                            return g.width > 0 && g.height > 0 && g.top >= 0; })(),
+      };
+    });
+    ok("手机横屏（750×342）→ 门控放行（引导层不遮挡）",
+       r.hintOn === false && r.supported === true,
+       "aspect=" + r.aspect + " hintOn=" + r.hintOn + " supported=" + r.supported);
+    ok("手机横屏 → 「开始对局」按钮在视口内可点", r.btnVis && r.btnInView);
+    ok("手机横屏 → 触屏控制簇出现", r.hudTouchOn === true && r.ctl === "flex",
+       "display=" + r.ctl);
+    ok("手机横屏 → GitHub 入口仍可见", r.ghVisible === true);
     await ctx.close();
   }
 

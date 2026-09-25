@@ -537,6 +537,26 @@ function makeRacket(rubber) {
   return g;
 }
 
+/* 方向变化后的判定必须重试，不能只判一次。
+ *
+ * 原因（真机实测教训）：iOS Safari 在 orientationchange 触发的那一刻，
+ * innerWidth/innerHeight 常常仍是**旋转前的旧值**，要等一拍才更新。若只判一次，
+ * 竖屏→横屏的瞬间会读到「390×844（宽高比 0.46）→ 拦截」，而补发的 resize 若没到
+ * （Safari 并不保证到），引导层就永久留在屏幕上 —— 玩家明明横屏了却进不去。
+ * 单靠 resize 不能救，因为 resize 也可能在尺寸更新前就触发。
+ *
+ * 解法：延迟重判若干次（含 requestAnimationFrame 与两个定时点），只要有一拍读到
+ * 新尺寸就会正确放行；判定是幂等的，重复调用无副作用，代价可忽略。
+ *
+ * 状态变量必须声明在这里（resize3D 之前），因为 buildScene() 里就会调用 resize3D()，
+ * 而它早于文件后段的门控函数执行 —— 用 let 声明放后面会撞 TDZ。 */
+let gateRetryT = [];
+function scheduleGateRetry() {
+  if (typeof applySupportGate !== "function") return;   // 极早期调用（门控尚未定义）→ 跳过
+  gateRetryT.forEach(t => clearTimeout(t));
+  gateRetryT = [0, 80, 260, 700].map(ms => setTimeout(applySupportGate, ms));
+}
+
 function resize3D() {
   const w = window.innerWidth, h = window.innerHeight;
   REND.setSize(w, h, false);
@@ -545,9 +565,16 @@ function resize3D() {
   if (typeof onOrientationMaybeChanged === "function") onOrientationMaybeChanged();
 }
 window.addEventListener("resize", resize3D);
-/* 横屏/竖屏切换（尤其 iOS Safari）不一定触发 resize，必须显式监听 */
+/* 横屏/竖屏切换（尤其 iOS Safari）不一定触发 resize，必须显式监听。
+ * 三条通路都要接：window.resize / window.orientationchange / visualViewport.resize。
+ * 且都走 scheduleGateRetry（延迟重判）—— 因为这三个事件都可能早于尺寸真正更新。 */
 window.addEventListener("orientationchange", resize3D);
 if (window.visualViewport) window.visualViewport.addEventListener("resize", resize3D);
+/* 地址栏收放 / 软键盘弹出也会改 visualViewport 高度，同样要重判 */
+if (window.screen && window.screen.orientation && window.screen.orientation.addEventListener) {
+  window.screen.orientation.addEventListener("change", resize3D);
+}
+window.addEventListener("pageshow", () => { resize3D(); scheduleGateRetry(); });
 
 /* ==================== 4. 游戏状态 ==================== */
 const G = {
@@ -1160,14 +1187,31 @@ function setupTouchControls() {
   syncTouchCtl();
 }
 
-/* ===== P2：仅平板横屏支持；其余（手机任意方向 / 平板竖屏）显示「请横屏」引导层 =====
-   放行条件：桌面(fine pointer) 或（粗指针 + 屏宽≥768 + 横屏）。 */
+/* ===== 设备/方向门控：放行条件 = 桌面(fine pointer) 或 触屏且横屏 =====
+ *
+ * 为什么不再用「屏宽 ≥ 768px」判：这是本项目最贵的一个判断错误。
+ * 相机垂直 FOV 固定 40°，水平可见范围 = 垂直范围 × **宽高比** ——
+ * 「看得见多宽」只由宽高比决定，与像素宽度无关。而设备像素宽度跟视野毫无关系：
+ * 手机屏幕窄，但横屏宽高比（2.16~2.74）**普遍高于**平板（iPad 是 4:3 = 1.33）。
+ * 实测（_gate_compare.js，撤掉遮罩后在 HIT_Z 击球平面量可见半宽）：
+ *     iPhone 13 横屏 750×342 → 1.30 m      844×390 机位 → 1.28 m
+ *     iPhone SE 横屏 568×320 → 1.05 m      iPad Pro 横屏 → 0.85 m
+ * 被拦的手机横屏视野比放行的平板还宽 24%。旧门槛把 iPhone 12/13/14 横屏
+ * （CSS 视口 750×342）挡在门外，玩家明明已横屏却一直卡在「请横置设备」。
+ *
+ * 现在的判据只用宽高比，门槛值 1.1 的依据：
+ *   · 真实竖屏宽高比最大 0.698（iPad Pro 竖屏）—— 远低于门槛
+ *   · 真实横屏宽高比最小 1.333（iPad 4:3 横屏）—— 高于门槛
+ *   · 1.1 只用来挡「近乎正方形」的畸形视口（水平视野≈垂直视野，球台装不下），
+ *     不承担区分手机/平板的职责 —— 那个职责本就不该存在。 */
+const MIN_PLAY_ASPECT = 1.1;
 function isSupported() {
   if (!window.matchMedia) return true;                                  // 不支持媒体查询 → 不拦截
   if (!window.matchMedia("(pointer: coarse)").matches) return true;     // 桌面（细指针）放行
-  const wide = window.matchMedia("(min-width: 768px)").matches;
-  const land = window.matchMedia("(orientation: landscape)").matches;
-  return wide && land;                                                  // 仅平板横屏放行
+  const w = window.innerWidth, h = window.innerHeight;
+  /* 尺寸读不到（异常环境 / 极早期调用）：退回标准方向查询，宁放行不误拦 */
+  if (!(w > 0 && h > 0)) return window.matchMedia("(orientation: landscape)").matches;
+  return w / h >= MIN_PLAY_ASPECT;                                      // 横屏即放行
 }
 function applySupportGate() {
   if (!UI.rotateHint) return;
@@ -1175,8 +1219,9 @@ function applySupportGate() {
   UI.rotateHint.classList.toggle("on", !ok);
   // 不支持时由引导层（z-index:30 全屏遮罩 + pointer-events:auto）阻断误触，
   // 这里不强行暂停，避免旋转回横屏后状态错乱。
+  return ok;
 }
-function onOrientationMaybeChanged() { applySupportGate(); }
+function onOrientationMaybeChanged() { applySupportGate(); scheduleGateRetry(); }
 
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 

@@ -274,27 +274,43 @@ G_("assist-follow", () => {
   R.assistFollowed = followed;
 });
 
-/* ---- 设备门控四组合（纯函数，改配置重调即可） ---- */
+/* ---- 设备门控（改配置重调即可）----
+ * 判据是「桌面(fine) 或 触屏且宽高比 ≥ MIN_PLAY_ASPECT」，所以桩里必须能改
+ * window 尺寸 —— 旧版只切 matchMedia 就够（当时判据是 min-width 查询），
+ * 现在判据读 innerWidth/innerHeight，只改 matchMedia 会测不到真分支（假绿）。 */
 G_("gate", () => {
-  const set = (coarse, wide, land) => {
+  const set = (coarse, w, h) => {
     MM["(pointer: coarse)"] = coarse;
-    MM["(min-width: 768px)"] = wide;
-    MM["(orientation: landscape)"] = land;
+    MM["(orientation: landscape)"] = h > 0 && (w / h) >= 1;
+    /* 判据读 window.innerWidth/innerHeight，桩里必须能改。
+     * 注意：沙箱内只能通过 window 拿（外层 sandbox 变量在 vm 里不可见）。 */
+    window.innerWidth = w;
+    window.innerHeight = h;
     return isSupported();
   };
   R.gate = {
-    desktop:      set(false, true,  true),   // 桌面（细指针）→ 放行
-    tabletLand:   set(true,  true,  true),   // 平板横屏 → 放行
-    tabletPort:   set(true,  true,  false),  // 平板竖屏 → 拦截
-    phoneLand:    set(true,  false, true),   // 手机横屏 → 拦截（屏宽不足）
-    phonePort:    set(true,  false, false)   // 手机竖屏 → 拦截
+    /* 桌面：细指针，任何尺寸都放行 */
+    desktop:      set(false, 1440, 900),
+    /* 触屏横屏：手机与平板都应放行（旧判据把手机横屏误拦了） */
+    phoneLand:    set(true,  750, 342),    // iPhone 13 横屏 → 放行
+    phoneLandSE:  set(true,  568, 320),    // iPhone SE 横屏 → 放行
+    padLand4x3:   set(true,  1024, 768),   // iPad 4:3 横屏 → 放行
+    padLandPro:   set(true,  1194, 834),   // iPad Pro 横屏 → 放行
+    /* 触屏竖屏：都应拦截 */
+    phonePort:    set(true,  390, 844),    // 手机竖屏 → 拦截
+    padPort:      set(true,  834, 1194),   // 平板竖屏 → 拦截
+    /* 畸形视口：近乎正方形（水平视野≈垂直视野，球台装不下）→ 拦截 */
+    square:       set(true,  700, 680),
+    tinySquare:   set(true,  400, 400)
   };
   // 引导层随门控切换
-  set(true, true, true);  applySupportGate();
-  R.hintHiddenOnTablet = !UI.rotateHint.classList.contains("on");
-  set(true, false, false); applySupportGate();
-  R.hintShownOnPhone = UI.rotateHint.classList.contains("on");
-  set(false, true, true);  applySupportGate();
+  set(true, 750, 342);   applySupportGate();
+  R.hintHiddenOnPhoneLand = !UI.rotateHint.classList.contains("on");
+  set(true, 1024, 768);  applySupportGate();
+  R.hintHiddenOnPadLand = !UI.rotateHint.classList.contains("on");
+  set(true, 390, 844);   applySupportGate();
+  R.hintShownOnPhonePort = UI.rotateHint.classList.contains("on");
+  set(false, 1440, 900); applySupportGate();
   R.hintHiddenOnDesktop = !UI.rotateHint.classList.contains("on");
 });
 
@@ -377,12 +393,23 @@ console.log("  —— 辅助跟随 / 门控 / 几何 ——");
 ok("粗指针 + 辅助开 → 每帧拍面自动对齐正确角度", A.assistFollowed === true);
 const g = A.gate || {};
 ok("门控 · 桌面（细指针）放行", g.desktop === true);
-ok("门控 · 平板横屏放行", g.tabletLand === true);
-ok("门控 · 平板竖屏拦截", g.tabletPort === false);
-ok("门控 · 手机横屏拦截（屏宽 < 768）", g.phoneLand === false);
+/* 触屏横屏一律放行 —— 手机与平板同等对待。
+ * 这条曾经写反过：旧断言是「手机横屏拦截（屏宽 < 768）」，把 bug 固化成了期望。
+ * 根因是判据挂错变量（用像素宽度替代宽高比），真机 iPhone 12/13/14 横屏
+ * 因此全部卡在「请横置设备」。详见下方 geometry 段的横向对比断言。 */
+ok("门控 · 手机横屏放行（iPhone 13 横屏 750×342）", g.phoneLand === true);
+ok("门控 · 手机横屏放行（iPhone SE 横屏 568×320，最窄真机）", g.phoneLandSE === true);
+ok("门控 · 平板横屏放行（4:3 横屏 1024×768）", g.padLand4x3 === true);
+ok("门控 · 平板横屏放行（1194×834）", g.padLandPro === true);
 ok("门控 · 手机竖屏拦截", g.phonePort === false);
-ok("平板横屏 → 引导层隐藏", A.hintHiddenOnTablet === true);
-ok("手机竖屏 → 引导层显示", A.hintShownOnPhone === true);
+ok("门控 · 平板竖屏拦截", g.padPort === false);
+/* 近似正方形视口必须拦：水平视野≈垂直视野，球台装不下。
+ * 这是新判据唯一真正要挡的形状（不再是「手机」）。 */
+ok("门控 · 近乎正方形的触屏视口拦截（700×680）", g.square === false);
+ok("门控 · 正方形触屏视口拦截（400×400）", g.tinySquare === false);
+ok("手机横屏 → 引导层隐藏", A.hintHiddenOnPhoneLand === true);
+ok("平板横屏 → 引导层隐藏", A.hintHiddenOnPadLand === true);
+ok("手机竖屏 → 引导层显示", A.hintShownOnPhonePort === true);
 ok("桌面 → 引导层永不显示", A.hintHiddenOnDesktop === true);
 
 /* 竖屏几何是 P2 门控的**物理依据**：不是"体验差"，是球台真的画不进来。

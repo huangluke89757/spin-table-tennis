@@ -29,7 +29,10 @@ async function once() {
   p.on("console", m => { if (m.type() === "error") errs.push("CONSOLE: " + m.text()); });
   p.on("response", r => { if (r.status() >= 400) bad.push(r.status() + " " + r.url()); });
 
-  await p.goto(URL, { waitUntil: "load", timeout: 45000 });
+  /* 带随机参数打开，绕开 CDN 边缘缓存 —— 部署后各节点收敛不同步，
+   * 裸 URL 可能命中旧 index.html（旧版本戳 → 连带加载旧 game.js），
+   * 会把「缓存没收敛」误判成「产物不对」。 */
+  await p.goto(URL + "?t=" + Date.now(), { waitUntil: "load", timeout: 45000 });
   await p.waitForTimeout(1800);
   await p.evaluate(() => {
     G.shots = [];

@@ -98,7 +98,7 @@ const INSTALL = () => {
     return false;
   }
 
-  /* ============ 场景 1：平板横屏（844×390 拉住 ≥768 门槛）============ */
+  /* ============ 场景 1：平板横屏（900×420）触摸手势完整回球 ============ */
   console.log("=== 场景 1 · 平板横屏，触摸手势完整回球 ===");
   {
     const { ctx, page } = await open(900, 420);
@@ -240,6 +240,53 @@ const INSTALL = () => {
        "球走廊 x[" + Math.round(cMinX) + "," + Math.round(cMaxX) + "]  控制簇 x[" +
        Math.round(fy.l) + "," + Math.round(fy.r) + "]");
 
+    await ctx.close();
+  }
+
+  /* ============ 场景 1b：手机横屏（真机 CSS 视口）→ 必须能进游戏并回球 ============
+   * 这个场景是本次修复的核心回归。旧的 isSupported() 用「屏宽 ≥768px」判支持，
+   * 而 iPhone 12/13/14 横屏的 CSS 视口是 750×342 —— 宽 750 < 768，于是被判不支持，
+   * 玩家旋转到横屏后依然卡在「请横置设备」。判据改为只看宽高比后必须放行。
+   * 用 750×342（iPhone 13 横屏真机视口）与 568×320（iPhone SE 横屏，最窄）两个点。 */
+  for (const [vw, vh, tag] of [[750, 342, "iPhone 13 横屏"], [568, 320, "iPhone SE 横屏"]]) {
+    console.log("\n=== 场景 1b · " + tag + "（" + vw + "×" + vh + "）触摸可玩 ===");
+    const { ctx, page } = await open(vw, vh);
+    await page.click("#startBtn");
+    await page.waitForTimeout(200);
+
+    const g = await page.evaluate(() => {
+      const el = id => document.getElementById(id);
+      const rc = el("startBtn").getBoundingClientRect();
+      return {
+        hintOn: el("rotateHint").classList.contains("on"),
+        supported: isSupported(),
+        aspect: +(innerWidth / innerHeight).toFixed(3),
+        btnInView: rc.top >= 0 && rc.bottom <= innerHeight && rc.left >= 0 && rc.right <= innerWidth,
+        running: G.running,
+        hudTouchOn: el("hud").classList.contains("touch-on"),
+        ctlDisplay: getComputedStyle(el("touchCtl")).display,
+      };
+    });
+    ok(tag + " → 门控放行（引导层不遮挡）",
+       g.hintOn === false && g.supported === true, "aspect=" + g.aspect + " supported=" + g.supported);
+    ok(tag + " → 开始按钮在视口内（能真的点到）", g.btnInView === true);
+    ok(tag + " → 对局已启动", g.running === true);
+    ok(tag + " → 触屏控制簇出现（有替代键盘的操作入口）",
+       g.hudTouchOn === true && g.ctlDisplay === "flex", "display=" + g.ctlDisplay);
+
+    /* 真触摸能否回球 —— 与场景 1 同法，避免只验「门开了」却没验「能玩」 */
+    await page.evaluate(INSTALL);
+    let hits = 0, tries = 0;
+    for (let k = 0; k < 6; k++) {
+      if (!(await fresh(page, 4000))) break;
+      await page.evaluate(() => { G.paddleAngle = correctTiltFor(G.spin); });
+      await page.evaluate(() => window.__simGesture({ x: 620, y: 320, dx: 0, dy: -150, steps: 6 }));
+      await page.waitForTimeout(260);
+      const st = await page.evaluate(() => G.hitDone);
+      tries++;
+      if (st) hits++;
+    }
+    ok(tag + " → 触摸手势被识别为有效击球", hits > 0, "识别 " + hits + "/" + tries + " 次");
     await ctx.close();
   }
 
