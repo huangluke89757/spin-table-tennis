@@ -30,11 +30,18 @@
   }
 
   * { margin:0; padding:0; box-sizing:border-box; }
+  /* 全屏与滚动锁定（走查问题 ③）：
+     overflow:hidden + overscroll-behavior:none + touch-action:none 三件套阻断了
+     移动端的两大破坏源 —— 下拉刷新与橡皮筋滚动（两者都会把游戏画面推出视口）。
+     #stage 用 100dvh 而不是 100vh：移动端地址栏收起时 vh 会突变 60px 左右，
+     画面会「跳」一下；dvh 跟随动态视口，配合 resize3D 才是稳定的。
+     不支持 dvh 的老浏览器退回 100% （由 html/body 的 height:100% 兜底）。 */
   html, body { width:100%; height:100%; overflow:hidden; background:var(--bg);
                overscroll-behavior:none; touch-action:none; }
   body { font-family: system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
          color:var(--fg); user-select:none; cursor:default; }
   #stage { position:relative; width:100%; height:100%; }
+  @supports (height:100dvh) { html, body, #stage { height:100dvh; } }
   canvas { display:block; width:100%; height:100%; cursor:crosshair;
            -webkit-user-select:none; user-select:none;
            -webkit-tap-highlight-color:transparent; touch-action:none; }
@@ -102,7 +109,9 @@
   #hudCfg .vv { font-size:11px; color:var(--muted); min-width:26px; text-align:right;
                 font-variant-numeric:tabular-nums; }
 
-  /* 收起：左下拍面栏 + 右下操作说明 + 配置体一起隐藏；开关按钮不在名单里，永远可见可点 */
+  /* 收起：左下拍面栏 + 右下操作说明 + 配置体一起隐藏；开关按钮不在名单里，永远可见可点。
+     —— 这也是**默认状态**（走查问题 ②）：辅助面板常驻会压住第一视角的击球点光环，
+     且它承载的是低频信息（音效一局最多调一次），不该常驻。 */
   #hud.ui-collapsed #hudFace,
   #hud.ui-collapsed #hudKeys,
   #hud.ui-collapsed #cfgBody,
@@ -120,14 +129,23 @@
   input[type=range]::-moz-range-thumb { width:12px; height:12px; border:none;
                       border-radius:50%; background:var(--accent); cursor:pointer; }
 
-  /* 辅助面板显隐开关：始终钉在右下角 */
-  #btnUiToggle { display:inline-flex; align-items:center; gap:6px;
+  /* 辅助面板显隐开关：常驻右下角。
+     收起态下它是**唯一**留下的控件，因此必须满足最小可点面积 44×44
+     （触屏 44px 是硬底线；原版 5px×10px 内距只有约 27×24，手指点不准）。
+     半透明降低存在感，但 hover/active 立刻回到全亮 —— 它是入口不是装饰。 */
+  #btnUiToggle { display:inline-flex; align-items:center; justify-content:center; gap:6px;
+                 min-width:44px; min-height:44px; padding:8px 12px;
                  background:transparent; border:1px solid var(--line-strong); color:var(--muted);
-                 border-radius:var(--r-s); padding:5px 10px; font-size:11px; cursor:pointer;
-                 font-family:inherit; }
-  #btnUiToggle:hover { color:var(--fg); border-color:var(--accent); }
+                 border-radius:var(--r-s); font-size:12px; cursor:pointer;
+                 font-family:inherit; -webkit-tap-highlight-color:transparent; }
+  #btnUiToggle:hover { color:var(--fg); border-color:var(--accent); background:rgba(255,255,255,0.07); }
+  #btnUiToggle:active { background:rgba(255,255,255,0.13); }
   #btnUiToggle.off { color:var(--dim); border-color:var(--line); }
-  #btnUiToggle .ar { font-size:9px; opacity:0.8; }
+  #btnUiToggle .ar { font-size:10px; opacity:0.85; }
+  /* 收起态：这是屏幕上唯一的辅助入口，给它一点底色，否则在暗背景里"看不见入口" */
+  #hud.ui-collapsed #hudCfg { padding:4px; background:rgba(10,14,20,0.42);
+                              border-color:var(--line); }
+  #hud.ui-collapsed #btnUiToggle { color:var(--muted); }
 
   /* 触屏设备（无键盘）隐藏键盘操作说明——它描述的是鼠标/键盘操作，对触屏无意义；
      开始页浮层里仍有完整按键表，不影响了解。桌面（fine pointer）保留。 */
@@ -265,7 +283,7 @@
   #newBadge.on { display:inline-flex; }
   #newBadge i { font-style:normal; font-size:11px; opacity:0.7; }
 
-  /* ===== 右上角外链（GitHub / 在线试玩） =====
+  /* ===== 右上角入口（GitHub 仓库 / 回到开始页） =====
      放右上而不是左下：左下已被拍面栏（操作信息）占着，右上原本空着。
      常态低饱和度、不加底色，hover 才浮出 tooltip —— 它是入口不是装饰，
      不该和球台抢视线。 */
@@ -274,28 +292,42 @@
      等于没做。它同时是全局常驻元素，跨开始页/对局/结束页都在同一位置。 */
   #topLinks { position:absolute; right:16px; top:16px; z-index:26;
               display:flex; align-items:center; gap:6px; pointer-events:auto; }
-  #topLinks a { position:relative; width:34px; height:34px; border-radius:50%;
-                display:flex; align-items:center; justify-content:center;
-                color:var(--muted); background:transparent;
-                border:1px solid transparent; transition:all .18s ease; }
-  #topLinks a:hover { color:var(--fg); background:rgba(255,255,255,0.12);
+  /* 用 a 与 button 两类元素承载同一外观：#ghLink 是外链（a），
+     #homeLink 是站内动作（button）。统一选择器避免两套样式漂移。 */
+  #topLinks a, #topLinks button { position:relative; width:44px; height:44px;
+                border-radius:50%; display:flex; align-items:center; justify-content:center;
+                color:var(--muted); background:transparent; border:1px solid transparent;
+                transition:all .18s ease; font-family:inherit; padding:0; cursor:pointer;
+                -webkit-tap-highlight-color:transparent; }
+  #topLinks a:hover, #topLinks button:hover { color:var(--fg); background:rgba(255,255,255,0.12);
                       border-color:var(--line-strong); }
-  #topLinks a svg { width:19px; height:19px; display:block; }
-  /* GitHub 是主入口：常驻一层淡底 + 描边，与次级的「在线试玩」区分开。
+  #topLinks a:active, #topLinks button:active { background:rgba(255,255,255,0.18); }
+  #topLinks a svg, #topLinks button svg { width:19px; height:19px; display:block; }
+  /* GitHub 是主入口：常驻一层淡底 + 描边，与次级的「回到开始页」区分开。
      底不能太淡 —— 太淡就等于入口不存在（实测 0.055 的底在深色场景里几乎看不见）。 */
   #topLinks a.primary { color:var(--fg); background:rgba(255,255,255,0.10);
                         border-color:var(--line); }
-  #topLinks a .tt { position:absolute; right:0; top:calc(100% + 10px);
+  #topLinks a .tt, #topLinks button .tt { position:absolute; right:0; top:calc(100% + 10px);
                     white-space:nowrap; font-size:12.5px; font-weight:650;
                     color:#1a1207; background:var(--accent);
                     padding:6px 13px; border-radius:16px;
                     opacity:0; transform:translateY(-4px); pointer-events:none;
                     transition:opacity .16s ease, transform .16s ease;
                     box-shadow:0 8px 24px rgba(0,0,0,0.55); }
-  #topLinks a:hover .tt { opacity:1; transform:translateY(0); }
-  #topLinks a .tt::before { content:""; position:absolute; right:14px; top:-4px;
+  #topLinks a:hover .tt, #topLinks button:hover .tt { opacity:1; transform:translateY(0); }
+  #topLinks a .tt::before, #topLinks button .tt::before { content:""; position:absolute;
+                            right:14px; top:-4px;
                             width:8px; height:8px; background:var(--accent);
                             transform:rotate(45deg); border-radius:1px; }
+  /* 全屏按钮在激活态（已全屏）用强调色描边，与未激活区分 */
+  #topLinks button.on { color:var(--accent); border-color:rgba(255,180,84,0.55);
+                        background:rgba(255,180,84,0.14); }
+  /* 极矮横屏（≤ 380px 高）：只收紧偏移与图标，按钮尺寸保持 44×44。
+     44px 是触摸目标硬底线（走查 RPT_012/RPT_028），任何视口都不得缩到 38px。 */
+  @media(max-height:380px){
+    #topLinks { right:10px; top:10px; gap:2px; }
+    #topLinks a svg, #topLinks button svg { width:17px; height:17px; }
+  }
 
   /* ===== 开始页：模式二选一 =====
      练习 / 挑战的差异刻意只有一处（辅助提示），所以卡片要直白讲清
@@ -344,16 +376,23 @@
     .overlay .tip { margin-top:10px; font-size:10.5px; line-height:1.6; }
     .btn { padding:10px 36px; font-size:15px; }
     #endBrand { margin-bottom:2px; }
-    #endBrand .nm { font-size:22px; }
-    #newBadge { margin-bottom:9px; padding:6px 14px; font-size:12px; }
-    #finalStat { font-size:14px; line-height:1.9; }
-    #finalStat em { font-size:24px; }
-    #endReason { margin-bottom:12px; }
-    .modeTag { margin-bottom:8px; }
-    #failWrap, #boardWrap { margin-top:10px; }
-    .fbRow { margin:3px 0; }
-    .bdRow { padding:3px 8px; }
-    #endUiRow { margin-top:9px; padding:6px 14px; }
+    #endBrand .nm { font-size:20px; }
+    #newBadge { margin-bottom:7px; padding:5px 12px; font-size:11.5px; }
+    #finalStat { font-size:13.5px; line-height:1.8; }
+    #finalStat em { font-size:22px; }
+    #endReason { margin-bottom:8px; }
+    .modeTag { margin-bottom:7px; font-size:11px; padding:2px 10px; }
+    #endGap { font-size:13px; margin:7px 0 2px; }
+    #endGap b { font-size:15px; }
+    #failWrap, #boardWrap { margin-top:6px; }
+    #failMain { margin-bottom:6px; font-size:12px; }
+    .fbRow { margin:3px 0; font-size:12px; grid-template-columns:66px 1fr 40px; }
+    .bdRow { padding:3px 8px; font-size:12px; }
+    #boardHead { font-size:10.5px; padding:0 8px 5px; }
+    #endLeft { padding:10px 14px 9px; }
+    #endRight { padding:10px 14px 8px 2px; }
+    #endLeft .btnRow .btn { padding:9px 26px; font-size:14px; }
+    #endUiRow { margin-top:6px; padding:5px 12px; font-size:11.5px; }
     .settings { padding:8px 14px; }
   }
   /* 极矮（< 380px，如 iPhone SE 横屏 320px 高）：再收紧一档，去掉次要说明 */
@@ -362,6 +401,65 @@
     .overlay .tip { display:none; }
     .modeCard .md { font-size:11px; }
     .brand .nm { font-size:22px; }
+    /* 结束页左栏：380px 高时把按钮组压到最紧凑，仍必须完整可见 */
+    #endBrand { display:none; }
+    #endLeft { padding:8px 12px 8px; }
+    #newBadge { margin-bottom:5px; padding:4px 10px; font-size:11px; }
+    #finalStat { font-size:13px; }
+    #finalStat em { font-size:20px; }
+    #endLeft .btnRow { padding-top:8px; }
+    #endLeft .btnRow .btn { padding:8px 20px; font-size:13.5px; }
+    #failMain { display:none; }
+  }
+
+  /* ===== 结束页：左右分栏（方案 A） =====
+     手机横屏可视高度只有 320~430px，而原版结束页纵向堆了 700~900px 内容，
+     「再来一局」被压到折叠线以下 —— 玩家必须滑动才能点到，而这个滑动动作
+     恰恰会触发浏览器上滑手势把画面推出视口（问题 ① 与 ③ 互为因果）。
+     解法：把纵向压力一次性转移到横向。左栏固定（结果 + 两个按钮，永不滚动），
+     右栏独立滚动（最近 10 局明细）。16:9 屏幕的横向富余就此变现。
+     窄横屏（< 720px 宽）降级为左 208px，再窄（< 620px）才回退纵向堆叠。 */
+  #endScreen { flex-direction:row; align-items:stretch; gap:0; padding:0;
+               overflow:hidden; touch-action:pan-y; }
+  /* .overlay 给首/尾子元素挂了 auto margin（用于让开始页内容居中且可滚）。
+     但 auto margin 会**覆盖 align-items:stretch** —— 分栏后 #endLeft 被顶到底、
+     #endRight 缩成内容高，整个分栏就散了。结束页自己把这对 margin 归零，
+     高度交回给 stretch。 */
+  #endScreen > :first-child, #endScreen > :last-child { margin-top:0; margin-bottom:0; }
+  #endLeft { flex:0 0 288px; display:flex; flex-direction:column; align-items:center;
+             padding:14px 16px 12px; overflow-y:auto; overscroll-behavior:contain;
+             touch-action:pan-y; }
+  /* 按钮组钉在左栏底部：即使左栏内部内容偶尔超出，按钮也不会被推走。
+     margin-top:auto 把剩余空间全部吸收到按钮上方，是「底部常驻」的最小写法。 */
+  #endLeft .btnRow { margin-top:auto; padding-top:12px; display:flex; align-items:center;
+                     gap:10px; flex:0 0 auto; }
+  #endRight { flex:1 1 auto; min-width:0; display:flex; flex-direction:column;
+              padding:14px 18px 12px 4px; overflow:hidden; }
+  /* 右栏唯一可滚动的是榜体本身。表头与标题留在滚动区外 ——
+     滚动时「这是哪一列」和「这是哪个榜」都不该消失（RPT_012 的核心诉求）。 */
+  #boardScroll { flex:1 1 auto; min-height:0; overflow-y:auto;
+                 overscroll-behavior:contain; touch-action:pan-y; }
+  /* 底部的辅助面板开关 + 提示语：用 margin-top:auto 压到右栏最底。
+     比再塞一个 flex spacer 更稳 —— 榜体隐藏（练习模式开局无数据）时
+     也能把这块收口钉在底部，不会浮到标题下方。 */
+  #endRight .btnRow { display:none; }        /* 按钮只出现在左栏 */
+  /* 两行文本必须 shrink 到 0：否则 min-content（最长的「辅助面板（拍面栏 + …）」）
+     会成为右栏的高度下限，在 380px 高的小屏上把 #boardList 挤成 0 高，
+     榜一行都看不见。overflow:hidden 配合 min-width:0 保证它不参与撑高。 */
+  #endRight #endUiRow { margin-top:auto; flex:0 1 auto; min-height:0;
+                        overflow:hidden; }
+  #endRight .tip { flex:0 1 auto; min-height:0; overflow:hidden; }
+  /* 极窄横屏：让右栏拿回更多宽度，左栏收窄但按钮仍完整（两个 88px 按钮 + 间隙） */
+  @media(max-width:720px){
+    #endLeft { flex-basis:208px; padding:10px 12px 10px; }
+    #endRight { padding:10px 12px 10px 2px; }
+    #endLeft .btnRow .btn { padding:10px 0; flex:1 1 0; text-align:center; }
+  }
+  /* 真的放不下并排（< 620px）：回退纵向。此时按钮靠底部固定，仍是方案 B 的兜底形态 */
+  @media(max-width:620px){
+    #endScreen { flex-direction:column; }
+    #endLeft { flex:0 0 auto; }
+    #endRight { flex:1 1 auto; padding:8px 16px 10px; }
   }
 
   /* ===== 结束页：模式标签 / 进步幅度 / 失败构成 / 历史榜 ===== */
@@ -377,12 +475,14 @@
   #endGap b { color:var(--accent); font-size:17px; font-variant-numeric:tabular-nums; }
   #endGap.isNew b { color:var(--ok); }
 
-  /* 失败构成：横向条 + 次数，最大项加粗描边 */
-  #failWrap { width:100%; max-width:400px; margin:15px auto 0; text-align:left; }
-  #failMain { font-size:13px; color:var(--muted); margin-bottom:10px; text-align:center; }
+  /* 失败构成：横向条 + 次数，最大项加粗描边。
+     宽度交给父栏（左栏），不再自己 max-width 居中 —— 分栏后居中会让它跟
+     上方结果文字的左边缘对不齐。 */
+  #failWrap { width:100%; margin:2px 0 0; text-align:left; }
+  #failMain { font-size:13px; color:var(--muted); margin-bottom:9px; text-align:left; }
   #failMain b { color:var(--bad); }
-  .fbRow { display:grid; grid-template-columns:76px 1fr 48px; align-items:center;
-           gap:10px; margin:5px 0; font-size:12.5px; }
+  .fbRow { display:grid; grid-template-columns:72px 1fr 44px; align-items:center;
+           gap:9px; margin:5px 0; font-size:12.5px; }
   .fbRow .fbName { color:var(--muted); }
   .fbRow.isTop .fbName { color:var(--fg); font-weight:650; }
   .fbRow .fbBar { height:6px; border-radius:3px; background:rgba(255,255,255,0.07);
@@ -393,24 +493,55 @@
   .fbRow .fbNum { text-align:right; color:var(--muted); }
   .fbRow.isTop .fbNum { color:var(--fg); }
 
-  /* 历史榜：只列挑战模式成绩；本局高亮 */
-  #boardWrap { width:100%; max-width:400px; margin:15px auto 0; text-align:left; }
+  /* 榜体容器必须吃掉右栏剩余高度，否则内部 #boardList 的 overflow-y:auto
+     拿不到受限高度、会一路撑开把底部说明顶出可视区（min-height:0 是 flex 子项
+     允许收缩的必要条件，缺了它 overflow 不生效）。 */
+  #boardWrap { width:100%; margin:0; text-align:left; flex:1 1 auto;
+               display:flex; flex-direction:column; min-height:0; }
   #boardTitle { font-size:12px; color:var(--dim); letter-spacing:1px;
-                margin-bottom:7px; text-align:center; }
-  .bdRow { display:grid; grid-template-columns:20px 58px 1fr auto; align-items:center;
+                margin-bottom:8px; text-align:left; flex:0 0 auto; }
+  /* 表头：钉在滚动区之外，滚榜时列名不消失。
+     列宽由 JS 按模式写入 style.gridTemplateColumns（挑战 4 列 / 练习 3 列），
+     避免在 CSS 里为两种模式各写一套 grid 模板。 */
+  #boardHead { display:grid; gap:9px;
+               padding:0 8px 6px; font-size:11px; color:var(--dim);
+               letter-spacing:0.5px; flex:0 0 auto;
+               border-bottom:1px solid var(--line); margin-bottom:4px; }
+  #boardHead.bd span:last-child { text-align:right; }
+  #boardHead.cmp span:not(:first-child) { text-align:right; }
+  .bdRow { display:grid; grid-template-columns:26px 62px 1fr 62px; align-items:center;
            gap:9px; padding:5px 8px; border-radius:6px; font-size:12.5px;
            color:var(--muted); }
   .bdRow.isCur { background:rgba(255,180,84,0.13); color:var(--fg);
                  box-shadow:0 0 0 1px rgba(255,180,84,0.30) inset; }
-  .bdRow .bdRank { color:var(--dim); font-weight:700; }
+  .bdRow .bdRank { color:var(--dim); font-weight:700; text-align:right; }
   .bdRow.isCur .bdRank { color:var(--accent); }
-  .bdRow .bdMain { color:var(--fg-2); font-weight:650; }
+  /* 并列名次：同分同名的行，名次字用弱色标记，避免看起来像漏排 */
+  .bdRow.isTie .bdRank { color:var(--muted); }
+  .bdRow .bdMain { color:var(--fg-2); font-weight:650; font-variant-numeric:tabular-nums; }
   .bdRow.isCur .bdMain { color:var(--accent); }
   .bdRow .bdSub { font-size:11.5px; }
-  .bdRow .bdTime { font-size:11px; color:var(--dim); }
+  .bdRow .bdTime { font-size:11px; color:var(--dim); text-align:right; }
+  /* 榜体内部滚动区只放行；表头不参与滚动 */
+  #boardList { flex:1 1 auto; min-height:0; overflow-y:auto;
+               overscroll-behavior:contain; touch-action:pan-y; }
   .boardEmpty { font-size:12.5px; color:var(--dim); line-height:1.85;
-                text-align:center; padding:8px 0; }
+                padding:6px 0; }
   .boardEmpty b { color:var(--accent); }
+  /* 练习模式右栏：不列榜，改为「本局 vs 个人最佳」对照 ——
+     拆栏后若右栏只留一句引导会大片留白，对照卡把这块空间变成有用的复盘。 */
+  .cmpRow { display:grid; grid-template-columns:1fr 84px 84px; gap:10px;
+            align-items:baseline; padding:8px; border-radius:6px; font-size:12.5px;
+            color:var(--muted); }
+  .cmpRow em { font-style:normal; font-variant-numeric:tabular-nums; color:var(--fg-2);
+               text-align:right; }
+  .cmpRow.now { background:rgba(255,180,84,0.10); color:var(--fg);
+                box-shadow:0 0 0 1px rgba(255,180,84,0.26) inset; }
+  .cmpRow.now em { color:var(--accent); font-weight:650; }
+  .cmpRow.delta em.up { color:var(--ok); }
+  .cmpRow.delta em.down { color:var(--bad); }
+  .cmpNote { font-size:11.5px; color:var(--dim); line-height:1.8; margin-top:10px;
+             padding-top:9px; border-top:1px solid var(--line); }
 
   /* ===== 分享海报浮层 ===== */
   #posterScreen { background:rgba(6,9,14,0.97); }
@@ -469,21 +600,30 @@
 <div id="stage">
   <canvas id="cv"></canvas>
 
-  <!-- 右上角外链：GitHub 仓库（主入口，hover 出「给项目点个 Star」）+ 在线试玩。
+  <!-- 右上角入口：GitHub 仓库（主入口，hover 出「给项目点个 Star」）+ 回到开始页。
        必须放在 #hud **之外**：#hud 自身有 z-index:5，会形成层叠上下文，
        子元素无论设多高的 z-index 都跳不出这个上下文，会被开始页浮层（z-index:20）
-       盖住 —— 而新访客恰恰就是停在开始页的那批人。 -->
+       盖住 —— 而新访客恰恰就是停在开始页的那批人。
+       第二个入口原为「在线试玩」（指向本站同一 URL）：当前页就是在线试玩，
+       点开等于刷新自己，语义重复且白占稀缺角位。改为「回到开始页」——
+       对局中途想换模式 / 重看规则时的最短路径（走查问题 ⑤）。 -->
   <div id="topLinks">
     <a id="ghLink" class="primary" target="_blank" rel="noopener"
        href="https://github.com/huangluke89757/spin-table-tennis" aria-label="GitHub 仓库">
       <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
       <span class="tt">给项目点个 Star ⭐</span>
     </a>
-    <a id="siteLink" target="_blank" rel="noopener"
-       href="https://spin-pingpong.app.workbuddy.host/" aria-label="在线试玩">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.9 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.9-3.8-9S9.5 5.7 12 3z"/></svg>
-      <span class="tt">在线试玩</span>
-    </a>
+    <button id="homeLink" type="button" aria-label="回到开始页" title="回到开始页（重新选择模式）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.2 12 3l9 7.2"/><path d="M5.5 9.4V20h13V9.4"/><path d="M9.8 20v-5.4h4.4V20"/></svg>
+      <span class="tt">回到开始页</span>
+    </button>
+    <button id="fsBtn" type="button" aria-label="进入全屏" title="进入 / 退出全屏">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+           id="fsIcon"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>
+      <span class="tt">全屏</span>
+    </button>
   </div>
 
   <div id="hud">
@@ -618,30 +758,40 @@
     <div><button class="btn" id="resumeBtn">继续</button><button class="btn ghost" id="quitBtn">结束本局</button></div>
   </div>
 
+  <!-- 结束页：方案 A 左右分栏。
+       左栏 #endLeft 固定不滚动 —— 本局结果 + 两个按钮永远在首屏，这是本轮改造的核心。
+       右栏 #endRight 只让榜体 #boardList 自己滚，标题与表头留在滚动区之外。 -->
   <div class="overlay hidden" id="endScreen">
-    <div id="endBrand"><span data-logo="34"></span><div class="nm">旋转乒乓</div></div>
-    <div class="sub">连续回球 · 落点得分</div>
-    <div id="newBadge">新纪录 NEW RECORD <i>超越上次 <span id="uiPrevBest">0</span> 分</i></div>
-    <div id="finalStat">本局连续回球 <em class="num" id="uiFinal">0</em> 拍　·　得分 <b class="num" id="uiScore2">0</b></div>
-    <div id="endReason"></div>
-    <div class="modeTag practice" id="endMode">练习模式 · 不计入排行榜</div>
-    <div id="endGap"></div>
-    <!-- 失败构成：把「系统知道但玩家看不到」的信息摊开。无数据时由 JS 整块隐藏 -->
-    <div id="failWrap" style="display:none">
-      <div id="failMain"></div>
-      <div id="failList"></div>
+    <div id="endLeft">
+      <div id="endBrand"><span data-logo="30"></span><div class="nm">旋转乒乓</div></div>
+      <div class="sub">连续回球 · 落点得分</div>
+      <div id="newBadge">新纪录 NEW RECORD <i>超越上次 <span id="uiPrevBest">0</span> 分</i></div>
+      <div id="finalStat">本局连续回球 <em class="num" id="uiFinal">0</em> 拍　·　得分 <b class="num" id="uiScore2">0</b></div>
+      <div id="endReason"></div>
+      <div class="modeTag practice" id="endMode">练习模式 · 不计入排行榜</div>
+      <div id="endGap"></div>
+      <!-- 失败构成：把「系统知道但玩家看不到」的信息摊开。无数据时由 JS 整块隐藏 -->
+      <div id="failWrap" style="display:none">
+        <div id="failMain"></div>
+        <div id="failList"></div>
+      </div>
+      <div class="btnRow">
+        <button class="btn" id="againBtn">再来一局</button>
+        <button class="btn ghost" id="posterBtn">分享海报</button>
+      </div>
     </div>
-    <!-- 历史前十（仅挑战模式）。无历史时由 JS 整块隐藏 -->
-    <div id="boardWrap" style="display:none">
-      <div id="boardTitle"></div>
-      <div id="boardList"></div>
+    <div id="endRight">
+      <div id="boardWrap" style="display:none">
+        <div id="boardTitle"></div>
+        <div id="boardHead"></div>
+        <div id="boardList"></div>
+      </div>
+      <div id="endUiRow">
+        <span>辅助面板（拍面栏 + 操作说明 + 音效配置）</span>
+        <button class="mini" id="btnUiToggle2">显示</button>
+      </div>
+      <div class="tip" id="endTip"></div>
     </div>
-    <div><button class="btn" id="againBtn">再来一局</button><button class="btn ghost" id="posterBtn">分享海报</button></div>
-    <div id="endUiRow">
-      <span>辅助面板（拍面栏 + 操作说明 + 音效配置）</span>
-      <button class="mini" id="btnUiToggle2">显示</button>
-    </div>
-    <div class="tip" id="endTip"></div>
   </div>
 
   <div class="overlay hidden" id="posterScreen">

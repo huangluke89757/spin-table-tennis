@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>旋转乒乓 · 移动端设计走查（2026-09-25）</title>
+<style>
+  :root{
+    --bg:#0B1119; --bg2:#121B26; --card:#151E2C; --card2:#101826;
+    --line:#28323F; --line2:#37475C;
+    --fg:#E6EDF3; --fg2:#C6D2E0; --muted:#8B98A8; --dim:#5F6B7C;
+    --accent:#F0B429; --accent2:#FAC775;
+    --ok:#6ECB8B; --bad:#E5604D; --warn:#E0A857; --info:#7FA6D8;
+    --r:10px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:960px;margin:0 auto;padding:48px 24px 80px}
+  header{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:40px}
+  h1{font-size:27px;font-weight:600;margin:0 0 8px;letter-spacing:0.5px}
+  h1 em{font-style:normal;color:var(--accent)}
+  .meta{font-size:13px;color:var(--muted)}
+  .meta b{color:var(--fg2);font-weight:500}
+  h2{font-size:19px;font-weight:600;margin:48px 0 16px;padding-left:12px;
+     border-left:3px solid var(--accent)}
+  h3{font-size:16px;font-weight:600;margin:28px 0 10px;color:var(--fg2)}
+  p{margin:10px 0;color:var(--fg2)}
+  small{color:var(--muted);font-size:12.5px}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:500;font-size:12.5px;letter-spacing:0.5px}
+  td b{color:var(--fg);font-weight:500}
+  .tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11.5px;
+       border:1px solid;white-space:nowrap}
+  .t-p0{color:#F2A79B;border-color:#6B3A33;background:#3A2422}
+  .t-p1{color:#F0CF8A;border-color:#6B5424;background:#2A2416}
+  .t-p2{color:#A9B8CC;border-color:#39445A;background:#22293A}
+  .t-ok{color:#9FE1CB;border-color:#2C5F52;background:#16302A}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+        padding:20px 22px;margin:16px 0}
+  .sec{border-left:3px solid var(--line2);padding-left:16px;margin:22px 0}
+  .sec .lb{font-size:11.5px;letter-spacing:2px;color:var(--dim);margin-bottom:4px}
+  .sec.p{background:linear-gradient(90deg,rgba(229,96,77,.07),transparent 60%);
+         border-left-color:#6B3A33}
+  .sec.d{background:linear-gradient(90deg,rgba(127,166,216,.07),transparent 60%);
+         border-left-color:#35507A}
+  .sec.a{background:linear-gradient(90deg,rgba(240,180,41,.09),transparent 60%);
+         border-left-color:#6B5424}
+  .sec.c{background:linear-gradient(90deg,rgba(110,203,139,.07),transparent 60%);
+         border-left-color:#2C5F52}
+  .sec p{margin:6px 0}
+  ul{margin:8px 0;padding-left:20px;color:var(--fg2)}
+  li{margin:5px 0}
+  code{background:#1B2432;border:1px solid var(--line);border-radius:5px;
+       padding:1px 6px;font-size:12.5px;color:var(--accent2);
+       font-family:ui-monospace,Consolas,monospace}
+  .sketch{background:#0D1420;border:1px solid var(--line);border-radius:var(--r);
+          padding:18px;margin:18px 0}
+  .sketch svg{display:block;width:100%}
+  .cap{font-size:12.5px;color:var(--muted);margin-top:12px;text-align:center}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:18px 0}
+  @media(max-width:720px){.two{grid-template-columns:1fr}}
+  .verdict{background:#121B26;border:1px solid #6B5424;border-radius:var(--r);
+           padding:18px 22px;margin:20px 0}
+  .verdict h3{margin-top:0;color:var(--accent)}
+  .q{background:var(--card);border:1px solid var(--line2);border-radius:var(--r);
+     padding:14px 18px;margin:10px 0}
+  .q b{color:var(--accent2)}
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
+         font-size:12.5px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>旋转乒乓 · 移动端<em>设计走查</em></h1>
+  <div class="meta">走查对象：<b>线上版 v3b20139e</b>（spin-pingpong.app.workbuddy.host）　·　
+    场景：<b>手机横屏对局 / 两种模式的结算页</b><br>
+    走查日期：<b>2026-09-25</b>　·　方法：pm-design-review 四层解析 + 28 条经验库对照　·　
+    结论：<b>4 个 P0 / 3 个 P1 / 1 个 P2，共 8 项</b></div>
+</header>
+
+<h2>一、走查总览</h2>
+<table>
+<tr><th style="width:34px">#</th><th>问题</th><th style="width:148px">性质</th>
+    <th style="width:56px">级别</th><th style="width:132px">命中经验</th></tr>
+<tr><td>1</td><td><b>结算页「再来一局」被挤出首屏</b><br><small>两种模式都存在，需滑动页面才能点到</small></td>
+    <td>关键操作未常驻，滚动手势与跨屏点击冲突</td>
+    <td><span class="tag t-p0">P0</span></td><td>RPT_012 / RPT_015</td></tr>
+<tr><td>2</td><td><b>辅助面板（拍面栏 + 音效栏）侵占击球走廊</b><br><small>两种模式都存在，遮挡来球与击球点光环</small></td>
+    <td>信息密度失控，违反渐进式披露</td>
+    <td><span class="tag t-p0">P0</span></td><td>RPT_020 / RPT_028</td></tr>
+<tr><td>3</td><td><b>滑动即切出游戏画面，无全屏</b><br><small>浏览器上滑手势 / 下拉刷新可中断对局</small></td>
+    <td>移动端兜底缺失，无操作锁定</td>
+    <td><span class="tag t-p0">P0</span></td><td>RPT_012 异常分支</td></tr>
+<tr><td>4</td><td><b>音效过载：除击球外全部保留</b><br><small>落台、挂网、落地、发球、UI、观众掌声底噪</small></td>
+    <td>听觉信号噪音比失衡</td>
+    <td><span class="tag t-p1">P1</span></td><td>—</td></tr>
+<tr><td>5</td><td><b>右上角「在线试玩」图标语义重复</b><br><small>当前页即在线试玩，点开的是同一游戏</small></td>
+    <td>入口价值存疑，占用稀缺角位</td>
+    <td><span class="tag t-p2">P2</span></td><td>—</td></tr>
+<tr><td>6</td><td><b>历史榜并列得分被排成 1、2 名</b><br><small>截图 3 中两个「1 分」占了第 1、2 位</small></td>
+    <td><b>逻辑漏洞</b>：排名无并列处理</td>
+    <td><span class="tag t-p0">P0</span></td><td>—</td></tr>
+<tr><td>7</td><td><b>练习模式显示「本模式首个纪录：0 拍」</b><br><small>截图 2，且紧邻「不计入排行榜」</small></td>
+    <td><b>逻辑漏洞</b>：0 分不构成「纪录」，且与不排名自相矛盾</td>
+    <td><span class="tag t-p1">P1</span></td><td>RPT_025 异常分支</td></tr>
+<tr><td>8</td><td><b>练习模式拆栏后右栏只剩一句引导</b><br><small>方案 A 的分栏结构会把内容缺口放大</small></td>
+    <td>需补「练习模式价值」内容</td>
+    <td><span class="tag t-p1">P1</span></td><td>RPT_021</td></tr>
+</table>
+
+<h2>二、逐项走查（四段式）</h2>
+
+<div class="card">
+<h3>① 结算页按钮不在首屏</h3>
+<div class="sec p"><div class="lb">潜在痛点 / 逻辑漏洞</div>
+<p>手机横屏可视高度仅 <b>320～430px</b>，而结算页纵向堆叠了：品牌行 → 副标题 → 新纪录徽章 → 本局结果 → 结束原因 → 模式标签 → 进步幅度 → 失败构成（1 行摘要 + N 行条形）→ 历史十局（10 行）→ 按钮行 → 辅助面板开关 → 提示语，总高约 <b>700～900px</b>。按钮被压到折叠线以下，玩家必须滑动才能点到「再来一局」。</p>
+<p>致命处在于：这个滑动动作本身会触发问题 ③（画面被切出 / 触发下拉刷新），于是「想再来一局」变成了「可能退出游戏」。这属于 <b>RPT_028</b> 所指的「把关键操作推入非首屏」的变体——不是把信息塞进弹窗，而是把按钮推进了滚动区。</p></div>
+<div class="sec d"><div class="lb">适用设计原则</div>
+<p><b>关键操作常驻（Pin Key Action）</b>——用户在当前页面最想完成的那一个动作，必须在任何窗口尺寸下无需滚动即可点击。<b>扫描流与深度流分流</b>——「再来一局」属于决策后的立即动作（短心流），明细属于复盘阅读（长心流），两者应占据不同的空间层级，而不是在同一条纵向轴上排队。</p></div>
+<div class="sec a"><div class="lb">黄金修改建议（两方案，见第三节草图）</div>
+<p><b>方案 A · 左右分栏</b>：左栏固定 240px 承载结果 + 两个按钮（不滚动），右栏独立滚动放「最近 10 局」明细。<br>
+<b>方案 B · 底部固定操作栏</b>：明细折叠成一行，展开后在按钮条<b>上方</b>的独立区域内滚动；按钮条贴底常驻。</p></div>
+<div class="sec c"><div class="lb">异常分支 / 闭环检查点</div>
+<p>· 历史记录不足 10 条（新用户第 1 局）时，右栏 / 展开区的空态是否友好？<br>
+· 窗口高度进一步压缩到 <code>280px</code>（横屏 + 浏览器工具栏全开）时，左栏与底栏是否仍完整可见？<br>
+· 右栏内部滚动到底后继续滑动，是否会冒泡到外层导致整页位移？需 <code>overscroll-behavior:contain</code>。</p></div>
+</div>
+
+<div class="card">
+<h3>② 辅助面板侵占击球走廊</h3>
+<div class="sec p"><div class="lb">潜在痛点 / 逻辑漏洞</div>
+<p>左下「正手 / 辅助关 / 拍面中立」面板与右下「音效 开 + 音量条 + 收起辅助」面板，同时占据屏幕底部两个角。第一视角下，球飞抵身前时的<b>击球点光环恰好在屏幕下方中央偏左</b>——左下拍面栏与它直接重叠，玩家是「看着球被面板盖住」在打球。</p>
+<p>更根本的问题：这两个面板是<b>常驻信息</b>，而它们的实际查看频率极低（音效设置一局最多调一次，拍面栏读数在熟练后不再需要）。常驻低频信息占据了高频视线区域，属于 <b>RPT_020</b> 说的「信息过载挤占主操作区」。</p></div>
+<div class="sec d"><div class="lb">适用设计原则</div>
+<p><b>渐进式披露</b>——默认只暴露必需，其余按需展开。<b>信号与噪音比</b>——对局中的视觉预算应优先给球、来球轨迹与击球点，UI 元素必须让路。<b>预注意属性</b>——需要被瞬间捕捉的是球的位置，而不是音量条。</p></div>
+<div class="sec a"><div class="lb">黄金修改建议</div>
+<p>1. 对局中<b>默认收起</b>辅助面板，仅保留右下角一个 28×28 的极简「⌃ 辅助」按钮（半透明，1.5s 无操作自动降到 0.35 透明度）。<br>
+2. 拍面栏改为<b>击球瞬间的浮出条</b>：只在击球后 800ms 内于底部中央淡入，显示「正手 · 拍面中立」，随后自动消失——从常驻面板变成即时反馈。<br>
+3. 音量条移入暂停页（暂停时本来就有足够空间），对局中只留静音 toggle。</p></div>
+<div class="sec c"><div class="lb">异常分支 / 闭环检查点</div>
+<p>· 新手第一局若默认收起，是否会因为看不到拍面提示而学不会？建议<b>首次进入的前 3 局默认展开</b>，之后自动收起并提示一次「已收起辅助面板，按 H 可随时展开」。<br>
+· 收起后的展开按钮与既有触摸控制簇（暂停 / 重开 / 辅 / 反）位置是否冲突？需做两两求交硬断言。</p></div>
+</div>
+
+<div class="card">
+<h3>③ 滑动切出画面 / 无全屏</h3>
+<div class="sec p"><div class="lb">潜在痛点 / 逻辑漏洞</div>
+<p>移动端浏览器中，从屏幕上滑会拉起系统导航条、下拉会触发刷新，两者都会让游戏画面被推出视口或直接中断对局。当前页面<b>没有任何全屏或滚动锁定</b>机制（代码中未出现 <code>requestFullscreen</code>）。触屏操作本身是高频大幅拖拽，误触概率极高。</p></div>
+<div class="sec d"><div class="lb">适用设计原则</div>
+<p><b>RPT_012 异常分支</b>明确要求「移动端小屏需提供降级方案」——这里的降级就是：把「浏览器页面」升级为「应用视图」。<b>心流保护</b>——沉浸式游戏场地被系统手势反复打断，是对心流最直接的破坏。</p></div>
+<div class="sec a"><div class="lb">黄金修改建议</div>
+<p>1. <b>开始对局时请求全屏</b>：在「开始对局」按钮的点击回调内（用户手势链内，否则被浏览器拒绝）调用 <code>requestFullscreen()</code>，并兼容 <code>webkitRequestFullscreen</code>（iOS Safari 仅 iPad 支持）。<br>
+2. <b>尝试锁定方向</b>：全屏成功后调用 <code>screen.orientation.lock("landscape")</code>，用 try/catch 包裹——<b>该 API 在 iOS Safari 上不支持，必然失败</b>，失败时静默降级为现有的横屏引导层。<br>
+3. <b>兜底 CSS</b>：对 <code>html, body</code> 设 <code>overscroll-behavior:none; touch-action:none; height:100%; overflow:hidden</code>，阻断下拉刷新与橡皮筋滚动；画布容器用 <code>100dvh</code> 而非 <code>100vh</code>，避免移动端地址栏收起时出现 60px 高度突变。<br>
+4. 提供<b>右上角全屏切换按钮</b>，让用户能主动退出全屏（否则全屏后无法返回）。</p></div>
+<div class="sec c"><div class="lb">异常分支 / 闭环检查点</div>
+<p>· 用户用 ESC 或系统手势退出全屏时，是否需要自动暂停对局？<b>建议：退出全屏即自动暂停</b>，否则玩家会在看不见完整画面的状态下继续失分。<br>
+· 全屏请求被拒绝（部分浏览器需二次授权）时，是否有可见的提示？建议静默失败 + 保持现有横屏引导层即可，但需在首次失败后<b>不再重复弹权限询问</b>。</p></div>
+</div>
+
+<h2>三、两套结算页草图（供确认）</h2>
+
+<h3>方案 A · 左侧固定结果 + 右侧滚动明细</h3>
+<div class="sketch">
+<svg viewBox="0 0 680 337" width="100%" xmlns="http://www.w3.org/2000/svg">
+<rect x="40" y="40" width="600" height="277" rx="12" fill="#0D1420" stroke="#2A3646" stroke-width="0.5"/>
+<rect x="48" y="48" width="216" height="261" rx="10" fill="#151E2C" stroke="#2A3646" stroke-width="0.5"/>
+<rect x="272" y="48" width="360" height="261" rx="10" fill="#151E2C" stroke="#2A3646" stroke-width="0.5"/>
+<circle cx="64" cy="62" r="8.5" fill="#F0B429"/><circle cx="64" cy="62" r="3.6" fill="#0D1420"/>
+<text x="79" y="62" font-size="12.5" font-weight="500" fill="#E6EDF3" dominant-baseline="central">旋转乒乓</text>
+<text x="60" y="88" font-size="11" fill="#8B98A8" dominant-baseline="central">本局连续回球</text>
+<text x="60" y="119" font-size="32" font-weight="500" fill="#F0B429" dominant-baseline="central">12</text>
+<text x="99" y="123" font-size="12" fill="#8B98A8" dominant-baseline="central">拍</text>
+<text x="60" y="143" font-size="12" fill="#6ECB8B" dominant-baseline="central">得分 3 · 最佳 5</text>
+<text x="60" y="165" font-size="12" fill="#E5604D" dominant-baseline="central">漏球 · 没打到球</text>
+<rect x="60" y="175" width="112" height="18" rx="9" fill="#1B2739" stroke="#37475C" stroke-width="0.5"/>
+<text x="116" y="184" font-size="10.5" fill="#9DB0C6" text-anchor="middle" dominant-baseline="central">挑战模式 · 计榜</text>
+<text x="60" y="208" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">本局主要问题</text>
+<rect x="60" y="216" width="86" height="17" rx="8.5" fill="#3A2422" stroke="#6B3A33" stroke-width="0.5"/>
+<text x="103" y="224.5" font-size="10.5" fill="#F2A79B" text-anchor="middle" dominant-baseline="central">没打到球 3</text>
+<rect x="150" y="216" width="64" height="17" rx="8.5" fill="#22293A" stroke="#39445A" stroke-width="0.5"/>
+<text x="182" y="224.5" font-size="10.5" fill="#A9B8CC" text-anchor="middle" dominant-baseline="central">吃旋转 2</text>
+<text x="60" y="250" font-size="10.5" fill="#8B98A8" dominant-baseline="central">距本模式最佳还差 2 拍</text>
+<rect x="60" y="272" width="94" height="30" rx="8" fill="#F0B429"/>
+<text x="107" y="287" font-size="13" font-weight="500" fill="#1A1207" text-anchor="middle" dominant-baseline="central">再来一局</text>
+<rect x="162" y="272" width="94" height="30" rx="8" fill="none" stroke="#3E4C60" stroke-width="0.5"/>
+<text x="209" y="287" font-size="12" fill="#C6D2E0" text-anchor="middle" dominant-baseline="central">分享海报</text>
+<text x="284" y="66" font-size="12" fill="#C6D2E0" dominant-baseline="central">最近 10 局</text>
+<text x="620" y="66" font-size="10.5" fill="#6B7889" text-anchor="end" dominant-baseline="central">独立滚动区</text>
+<line x1="284" y1="78" x2="620" y2="78" stroke="#2A3646" stroke-width="0.5"/>
+<text x="284" y="94" font-size="10.5" fill="#6B7889" dominant-baseline="central">名次</text>
+<text x="326" y="94" font-size="10.5" fill="#6B7889" dominant-baseline="central">得分</text>
+<text x="400" y="94" font-size="10.5" fill="#6B7889" dominant-baseline="central">拍 · 准 · 档</text>
+<text x="620" y="94" font-size="10.5" fill="#6B7889" text-anchor="end" dominant-baseline="central">时间</text>
+<text x="284" y="112" font-size="11" fill="#5F6B7C" dominant-baseline="central">1</text>
+<text x="326" y="112" font-size="11.5" fill="#C6D2E0" dominant-baseline="central">3 分</text>
+<text x="400" y="112" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">12 拍 · 2 准 · 2 档</text>
+<text x="620" y="112" font-size="10.5" fill="#5F6B7C" text-anchor="end" dominant-baseline="central">15:02</text>
+<text x="284" y="132" font-size="11" fill="#5F6B7C" dominant-baseline="central">2</text>
+<text x="326" y="132" font-size="11.5" fill="#C6D2E0" dominant-baseline="central">3 分</text>
+<text x="400" y="132" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">9 拍 · 1 准 · 2 档</text>
+<text x="620" y="132" font-size="10.5" fill="#5F6B7C" text-anchor="end" dominant-baseline="central">14:58</text>
+<rect x="280" y="143" width="344" height="19" rx="5" fill="#2A2416" stroke="#6B5424" stroke-width="0.5"/>
+<text x="284" y="152" font-size="11" fill="#F0B429" dominant-baseline="central">3</text>
+<text x="326" y="152" font-size="11.5" fill="#F0B429" dominant-baseline="central">2 分</text>
+<text x="400" y="152" font-size="10.5" fill="#D8BE7A" dominant-baseline="central">7 拍 · 1 准 · 1 档</text>
+<text x="620" y="152" font-size="10.5" fill="#D8BE7A" text-anchor="end" dominant-baseline="central">14:51 本局</text>
+<text x="284" y="172" font-size="11" fill="#5F6B7C" dominant-baseline="central">4</text>
+<text x="326" y="172" font-size="11.5" fill="#C6D2E0" dominant-baseline="central">1 分</text>
+<text x="400" y="172" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">4 拍 · 0 准 · 1 档</text>
+<text x="620" y="172" font-size="10.5" fill="#5F6B7C" text-anchor="end" dominant-baseline="central">14:44</text>
+<text x="284" y="192" font-size="11" fill="#5F6B7C" dominant-baseline="central">4</text>
+<text x="326" y="192" font-size="11.5" fill="#C6D2E0" dominant-baseline="central">1 分</text>
+<text x="400" y="192" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">3 拍 · 0 准 · 1 档</text>
+<text x="620" y="192" font-size="10.5" fill="#5F6B7C" text-anchor="end" dominant-baseline="central">14:44</text>
+<text x="284" y="212" font-size="11" fill="#5F6B7C" dominant-baseline="central">6</text>
+<text x="326" y="212" font-size="11.5" fill="#C6D2E0" dominant-baseline="central">0 分</text>
+<text x="400" y="212" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">2 拍 · 0 准 · 1 档</text>
+<text x="620" y="212" font-size="10.5" fill="#5F6B7C" text-anchor="end" dominant-baseline="central">14:44</text>
+<text x="284" y="232" font-size="11" fill="#5F6B7C" dominant-baseline="central">7</text>
+<text x="326" y="232" font-size="11.5" fill="#C6D2E0" dominant-baseline="central">0 分</text>
+<text x="400" y="232" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">1 拍 · 0 准 · 1 档</text>
+<text x="620" y="232" font-size="10.5" fill="#5F6B7C" text-anchor="end" dominant-baseline="central">14:44</text>
+<text x="284" y="252" font-size="11" fill="#5F6B7C" dominant-baseline="central">8</text>
+<text x="326" y="252" font-size="11.5" fill="#C6D2E0" dominant-baseline="central">0 分</text>
+<text x="400" y="252" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">0 拍 · 0 准 · 1 档</text>
+<text x="620" y="252" font-size="10.5" fill="#5F6B7C" text-anchor="end" dominant-baseline="central">14:44</text>
+<line x1="284" y1="268" x2="620" y2="268" stroke="#2A3646" stroke-width="0.5" stroke-dasharray="3 3"/>
+<text x="452" y="284" font-size="10.5" fill="#6B7889" text-anchor="middle" dominant-baseline="central">右栏可继续下滚 · 左栏与按钮不动</text>
+</svg>
+<div class="cap">左栏 = 结果 + 按钮（固定不动）　|　右栏 = 最近 10 局明细（独立滚动）</div>
+</div>
+<p><b>优点</b>：横向利用 16:9 屏幕的富余宽度，纵向压力彻底解除；「本局结果」与「历史对比」并排，可横向扫读，信息密度反而提升；并列名次用「4、4」表达也更自然。</p>
+<p><b>代价</b>：需要改造结算页为 flex 双栏，左栏固定宽度在极窄横屏（如 640px 宽）下需降级为 200px；练习模式右栏需补内容（见问题 ⑧）。</p>
+
+<h3>方案 B · 底部固定操作栏 + 折叠明细</h3>
+<div class="sketch">
+<svg viewBox="0 0 680 336" width="100%" xmlns="http://www.w3.org/2000/svg">
+<rect x="40" y="40" width="600" height="276" rx="12" fill="#0D1420" stroke="#2A3646" stroke-width="0.5"/>
+<rect x="40" y="256" width="600" height="60" fill="#101826"/>
+<line x1="40" y1="256" x2="640" y2="256" stroke="#33415A" stroke-width="0.5"/>
+<circle cx="60" cy="58" r="8.5" fill="#F0B429"/><circle cx="60" cy="58" r="3.6" fill="#0D1420"/>
+<text x="75" y="58" font-size="12.5" font-weight="500" fill="#E6EDF3" dominant-baseline="central">旋转乒乓</text>
+<rect x="490" y="48" width="140" height="20" rx="10" fill="#1B2739" stroke="#37475C" stroke-width="0.5"/>
+<text x="560" y="58" font-size="10.5" fill="#9DB0C6" text-anchor="middle" dominant-baseline="central">挑战模式 · 计入排行榜</text>
+<rect x="52" y="80" width="576" height="72" rx="10" fill="#151E2C" stroke="#2A3646" stroke-width="0.5"/>
+<text x="68" y="100" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">本局连续回球</text>
+<text x="68" y="128" font-size="30" font-weight="500" fill="#F0B429" dominant-baseline="central">12</text>
+<text x="110" y="132" font-size="12" fill="#8B98A8" dominant-baseline="central">拍</text>
+<line x1="140" y1="92" x2="140" y2="140" stroke="#2A3646" stroke-width="0.5"/>
+<text x="158" y="100" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">得分</text>
+<text x="158" y="124" font-size="19" font-weight="500" fill="#6ECB8B" dominant-baseline="central">3</text>
+<text x="196" y="100" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">最佳</text>
+<text x="196" y="124" font-size="19" font-weight="500" fill="#C6D2E0" dominant-baseline="central">5</text>
+<line x1="244" y1="92" x2="244" y2="140" stroke="#2A3646" stroke-width="0.5"/>
+<text x="262" y="100" font-size="10.5" fill="#7C8A9C" dominant-baseline="central">本局结束原因</text>
+<text x="262" y="122" font-size="12.5" fill="#E5604D" dominant-baseline="central">漏球 · 没打到球</text>
+<text x="262" y="140" font-size="11" fill="#8B98A8" dominant-baseline="central">距本模式最佳还差 2 拍</text>
+<rect x="470" y="104" width="76" height="17" rx="8.5" fill="#3A2422" stroke="#6B3A33" stroke-width="0.5"/>
+<text x="508" y="112.5" font-size="10.5" fill="#F2A79B" text-anchor="middle" dominant-baseline="central">没打到球 3</text>
+<rect x="552" y="104" width="62" height="17" rx="8.5" fill="#22293A" stroke="#39445A" stroke-width="0.5"/>
+<text x="583" y="112.5" font-size="10.5" fill="#A9B8CC" text-anchor="middle" dominant-baseline="central">吃旋转 2</text>
+<rect x="52" y="162" width="576" height="34" rx="8" fill="#131B28" stroke="#2A3646" stroke-width="0.5"/>
+<text x="68" y="179" font-size="12" fill="#C6D2E0" dominant-baseline="central">最近 10 局明细</text>
+<text x="176" y="179" font-size="10.5" fill="#6B7889" dominant-baseline="central">展开后在此区域内滚动</text>
+<text x="612" y="179" font-size="11" fill="#8B98A8" text-anchor="end" dominant-baseline="central">展开</text>
+<rect x="52" y="204" width="576" height="46" rx="8" fill="#101825" stroke="#2A3646" stroke-width="0.5" stroke-dasharray="4 4"/>
+<text x="340" y="227" font-size="11" fill="#5F6B7C" text-anchor="middle" dominant-baseline="central">明细滚动区（展开时占用，收起时归还给上方结果区）</text>
+<rect x="56" y="266" width="150" height="34" rx="8" fill="#F0B429"/>
+<text x="131" y="283" font-size="13.5" font-weight="500" fill="#1A1207" text-anchor="middle" dominant-baseline="central">再来一局</text>
+<rect x="216" y="266" width="120" height="34" rx="8" fill="none" stroke="#3E4C60" stroke-width="0.5"/>
+<text x="276" y="283" font-size="12" fill="#C6D2E0" text-anchor="middle" dominant-baseline="central">分享海报</text>
+<text x="619" y="283" font-size="11.5" fill="#8B98A8" text-anchor="end" dominant-baseline="central">辅助面板 显示</text>
+<text x="56" y="317" font-size="10.5" fill="#6B7889" dominant-baseline="central">底栏不随滚动移动 · 任何窗口高度下都在首屏</text>
+</svg>
+<div class="cap">结果区（含折叠明细）在上方滚动　|　按钮条贴底常驻，不参与滚动</div>
+</div>
+<p><b>优点</b>：改动面小于方案 A（结算页仍保持纵向结构，只是把按钮行抽出为固定底栏 + 明细加折叠）；默认状态下详情收起，首屏更干净，符合渐进式披露；对 640px 宽的极窄横屏更友好。</p>
+<p><b>代价</b>：「最近 10 局」默认不可见，原有的「一眼看到自己历史排名」的价值被削弱一次点击；折叠态需额外的展开/收起状态管理。</p>
+
+<div class="verdict">
+<h3>我的建议：选方案 A</h3>
+<p>理由是它同时解决了问题 ①、⑥、⑧ 三项——横向分栏天然适合「本局 vs 历史」的并列对比（RPT_023 同比分析的思路），并列名次在左右对照下也更容易读懂；并且它把纵向压力一次性清零，后续再往结算页加内容（如本周趋势、好友对比）不会再复发这个问题。方案 B 的折叠只是把压力推迟，明细一展开，问题 ① 会以另一种形式回来。</p>
+<p>若你更看重改动成本与向后兼容，方案 B 是稳妥选择；两者也可以组合——<b>A 的分栏 + 右栏顶部「本局 vs 个人最佳」对比卡</b>是我认为的最优形态。</p>
+</div>
+
+<h2>四、需要你拍板的 4 个问题</h2>
+<div class="q"><b>Q1 · 结算页方案</b>　选 A（左右分栏）、B（底部固定栏），还是 A+B 组合（分栏 + 右栏加「本局 vs 最佳」对比卡）？</div>
+<div class="q"><b>Q2 · 辅助面板默认态</b>　「前 3 局默认展开，之后自动收起」这个策略你接受吗？还是希望一律默认收起、只保留展开按钮？</div>
+<div class="q"><b>Q3 · 音效收敛范围</b>　问题 ④ 你说「去掉除击球外所有声音」，我想再确认两点：<br>
+  · <b>观众欢呼</b>要保留吗？还是只保留「破纪录那一刻」的欢呼，其余掌声/零星加油全部去掉？<br>
+  · 扣分反馈目前有下行音（<code>bad</code>），它是「失败提示音」而非「击球声」——一起去掉，还是保留作为必要反馈？<br>
+  我倾向：<b>只保留击球声 + 破纪录欢呼</b>，扣分只靠画面与文案表达，最干净。</div>
+<div class="q"><b>Q4 · 全屏与横屏锁定</b>　全屏在 iOS Safari 上只能「网页全屏」（<code>100dvh</code> + 隐藏地址栏），真正的 <code>requestFullscreen</code> 与 <code>orientation.lock</code> 均不可用。你接受「安卓上真全屏 + 方向锁定，iOS 上网页全屏 + 现有横屏引导层」这个差异化降级吗？</div>
+
+<footer>
+  走查工具：pm-design-review v2.1（知识库 28 条经验 / 4 大业务领域）　·　
+  代码基线：<code>game.js</code> 2277 行 / <code>index.html</code> 674 行　·　
+  确认后即按选定方案进入实现，并同步跑移动端布局与触摸链路回归。
+</footer>
+
+</div>
+</body>
+</html>

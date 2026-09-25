@@ -584,10 +584,10 @@ const G = {
   tIdeal: 0, idealSet: false, hitDone: false,
   serveT: 0, predHitT: 0, predZ2: 0, predZ2x: 0,
   nextServeAt: 0, overAt: 0,
-  spin: { wx: 0, wy: 0 }, spinName: "—", spinColor: "#e6edf3", spinSpeed: 1, cheerT: 0,
+  spin: { wx: 0, wy: 0 }, spinName: "—", spinColor: "#e6edf3", spinSpeed: 1,
   score: 0, goodStreak: 0, landErr: null, pending: null,
   assist: true, paddleAngle: 0, backhand: false,
-  uiHidden: false,                       // 底部辅助面板（操作说明 + 音效栏）是否收起
+  uiHidden: true,                        // 辅助面板（拍面栏 + 操作说明 + 音效栏）默认收起
   paddle: { anim: -1, side: 1, action: "推挡", hx: 0, hy: 0.92, pend: 0, dur: 0.34 },
   opp: { anim: -1 },
   msg: "", msgSub: "", msgT: 0, msgColor: "#e6edf3",
@@ -625,8 +625,8 @@ function bindUI() {
    "btnMute","volRange","volTxt","btnMute2","volRange2","volTxt2",
    /* 本轮新增：双模式卡片 / 失败归因 / 历史榜 / GitHub 入口 */
    "modePractice","modeChallenge","startBtn","endMode","endGap",
-   "failWrap","failList","failMain","boardWrap","boardTitle","boardList",
-   "ghLink","siteLink",
+   "failWrap","failList","failMain","boardWrap","boardTitle","boardList","boardHead",
+   "ghLink","homeLink","fsBtn",
    /* 移动端触屏控制簇（Task 7）：暂停 / 重开 / 辅助 / 正反手 */
    "tcPause","tcRestart","tcAssist","tcHand",
    /* P2：请横屏引导层 */
@@ -664,7 +664,13 @@ function loadPrefs() {
     if (!isNaN(v)) setVol(v / 100, false);
     setMute(localStorage.getItem("fpp_mute") === "1", false);
     G.assist = localStorage.getItem("fpp_assist") !== "0";
-    G.uiHidden = localStorage.getItem("fpp_uihidden") === "1";
+    /* 辅助面板显隐（走查问题 ②）：**一律默认收起**，不再读偏好——
+     * 常驻的拍面栏 + 音效栏占据屏幕底部两个角，而第一视角的击球点光环
+     * 恰好在下方中央偏左，实测两者直接重叠，玩家是「看着球被面板盖住」在打球。
+     * 面板本身是低频信息（音效一局最多调一次），不该常驻。
+     * 这里刻意不再从 localStorage 恢复展开态：老玩家上次的「展开」不该
+     * 在新版继续默认挡住球。收起点在 HUD 右下角，随时可开。 */
+    G.uiHidden = true;
   } catch (e) {}
 }
 /* HUD 与暂停面板两处音量控件保持同步 */
@@ -697,7 +703,6 @@ function toggleUi() {
   G.uiHidden = !G.uiHidden;
   savePrefs();
   syncUiToggle();
-  sfx("ui");
 }
 
 /* ==================== 5. 来球与判定 ==================== */
@@ -745,8 +750,6 @@ function serve() {
   G.phase = "incoming"; G.tIdeal = 0; G.idealSet = false; G.hitDone = false;
   G.serveT = G.gt; G.predHitT = sol.r.hitT; G.predZ2 = sol.r.z2; G.predZ2x = sol.r.z2x;
   G.nextServeAt = 0; G.opp.anim = 0;
-  sfx("serve");
-  if (G.cheerT <= 0 && Math.random() < 0.30) { sfx("yell"); G.cheerT = 3.2; }   // 发球前的零星加油
 }
 
 /* 拍面角度：错拍面惩罚的核心 */
@@ -924,13 +927,10 @@ function finalizePoint() {
      * 走完才显示，两条夸奖就串成「好球」→「落点精准 +N 分」，不会被吞掉。 */
     showMsg(great ? "神来一板" : "落点精准",
             "连准 " + G.goodStreak + " 拍　+" + gain + " 分", "#ffd166", 1.7, 2, 0.55);
-    if (great) sfx("good");
-    crowdCheer(true);
   } else {
     G.goodStreak = 0;
   }
   G.score += gain;
-  if (G.cheerT <= 0 && Math.random() < 0.20) { sfx("yell"); G.cheerT = 2.8; }   // 稀疏的零星喝彩
   return gain;                                     // 海报按单拍得分挑「高光三连拍」
 }
 
@@ -938,20 +938,24 @@ function succeed(dt) {
   const perfect = Math.abs(dt) < 0.07;
   if (G.curSpinBall) G.statSpinHit++;      // 海报指标①的分子：旋转球接住了
   G.rally++;
-  if (G.rally > G.best) { G.best = G.rally; saveBest(); }
+  /* 破纪录瞬间：更新最佳 + 欢呼一次。
+   * 欢呼必须**每局只响一次**，在首次超越旧纪录的那一刻触发（用 recordCheered 哨兵）。
+   * 若只写 G.rally > G.best，则超越之后的每一拍都是「新纪录」，欢呼会连响十几次 ——
+   * 与原版「每次得分都鼓掌」是同一个错误，只是换了个触发条件。 */
+  if (G.rally > G.best) {
+    const firstBreak = !!G.bestAtStart && !G.recordCheered;
+    G.best = G.rally; saveBest();
+    if (firstBreak) { G.recordCheered = true; sfx("record"); }
+  }
   const prevLevel = G.level;
   G.level = Math.min(MAX_LEVEL, 1 + Math.floor(G.rally / 4));
-  if (G.level > prevLevel) sfx("level");
   /* 夸奖必须看得清：旧版只停 0.6s，而球落台（0.5~1.2s 后）马上弹「落点精准」把它顶掉，
    * 玩家基本读不到。现在停 1.9s，并设 1.5s 保护期 —— 后面那条结算提示会排队等一下。 */
   if (!perfect) {                                   // 完美时机有专属提示，普通上台就交给落点结算
     showMsg("好球", "连续 " + G.rally + " 拍", "#7ee0a8", 1.9, 1, 1.5);
   } else {
     showMsg("PERFECT", "时机完美　连续 " + G.rally + " 拍", "#ffd166", 2.1, 2, 1.7);
-    sfx("good");
   }
-  crowdCheer(perfect);          // 观众反应：掌声 / 欢呼，每次参数都不同
-  if (G.cheerT <= 0 && Math.random() < 0.18) { sfx("yell"); G.cheerT = 2.6; }
 }
 /* ===== 失败归因分类 =====
  * 把一次失败收敛到 5 个「玩家能理解」的桶：
@@ -997,8 +1001,7 @@ function fail(tag, why, tiltErr, dt) {
    * 停留时长与结算窗口同步（见下方 SETTLE_WAIT）：结束页弹出的同一刻提示正好消失，
    * 不留残影。失败原因另由结束页的「失败原因」字段承接，信息不会丢。 */
   showMsg(tag, why + dev, "#ff7b72", SETTLE_WAIT, 3, SETTLE_WAIT);
-  if (tag === "下网") { sfx("net"); b.vz = -Math.abs(b.vz) * 0.14; }   // 让球真实地栽在网前
-  sfx("bad");
+  if (tag === "下网") { b.vz = -Math.abs(b.vz) * 0.14; }   // 让球真实地栽在网前（不再配音）
   /* 失败后先静置 SETTLE_WAIT 秒：让玩家看清失败原因 + 落点标注 + 屏幕下方的偏差读数，
    * 读完了再弹「本局结束」。期间不锁输入以外的任何东西，HUD 照常刷新。
    * 这段时间不再是空白等待 —— 由「结算中」动画填上（见 showSettle）。 */
@@ -1120,12 +1123,12 @@ function setupInput() {
     if (k === "h") {
       if (G.mode === "challenge") {
         showMsg("挑战模式", "辅助提示不可开启（成绩计入排行榜）", "#ffb454", 1.2, 1, 0);
-        sfx("ui");
+       
       } else {
-        G.assist = !G.assist; savePrefs(); sfx("ui");   // HUD 文案由 updateHUD 每帧同步
+        G.assist = !G.assist; savePrefs();   // HUD 文案由 updateHUD 每帧同步
       }
     }
-    if (k === "m") { setMute(!SFX.mute); syncSoundUI(); sfx("ui"); }
+    if (k === "m") { setMute(!SFX.mute); syncSoundUI(); }
     if (k === "tab") { e.preventDefault(); toggleUi(); }   // 收起/展开底部辅助面板
     if (k === "r" && G.running) restart();
     if (k === "p" || e.key === "Escape") togglePause();
@@ -1134,25 +1137,126 @@ function setupInput() {
   window.addEventListener("keyup", e => { if (e.key.toLowerCase() === "shift") G.backhand = false; });
   cv.addEventListener("contextmenu", e => e.preventDefault());
 
-  document.getElementById("startBtn").onclick = () => { audioInit(); syncSoundUI(); sfx("ui"); restart(); };
-  document.getElementById("againBtn").onclick = () => { sfx("ui"); restart(); };
-  document.getElementById("resumeBtn").onclick = () => { sfx("ui"); togglePause(); };
+  /* 「开始对局」是最自然的进全屏时机：这是用户明确表达「我要玩游戏」的那一刻，
+     且点击是用户手势，requestFullscreen 会被浏览器接受。放在别处（如页面加载时）
+     一定被拒。againBtn 同理 —— 连打多局时不必反复进出全屏，已全屏则 no-op。 */
+  document.getElementById("startBtn").onclick = () => { audioInit(); syncSoundUI(); requestFullscreen(); restart(); };
+  document.getElementById("againBtn").onclick = () => { requestFullscreen(); restart(); };
+  document.getElementById("resumeBtn").onclick = () => { togglePause(); };
   document.getElementById("quitBtn").onclick = () => { G.paused = false; gameOver("主动结束"); };
-  document.getElementById("posterBtn").onclick = () => { sfx("ui"); openPoster(); };
+  document.getElementById("posterBtn").onclick = () => { openPoster(); };
   document.getElementById("closePosterBtn").onclick = () => {
-    sfx("ui"); UI.posterScreen.classList.add("hidden"); UI.endScreen.classList.remove("hidden");
+    UI.posterScreen.classList.add("hidden"); UI.endScreen.classList.remove("hidden");
   };
   document.getElementById("savePosterBtn").onclick = () => {
     POSTER.save(UI.posterCv, "旋转乒乓_" + G.rally + "拍_" + G.score + "分.png");
   };
-  const onMute = () => { audioInit(); setMute(!SFX.mute); syncSoundUI(); sfx("ui"); };
+  const onMute = () => { audioInit(); setMute(!SFX.mute); syncSoundUI(); };
   if (UI.btnMute) UI.btnMute.onclick = onMute;
   if (UI.btnMute2) UI.btnMute2.onclick = onMute;
-  if (UI.btnUiToggle) UI.btnUiToggle.onclick = toggleUi;
+  UI.btnUiToggle.onclick = toggleUi;
   if (UI.btnUiToggle2) UI.btnUiToggle2.onclick = toggleUi;
   const onVol = e => { audioInit(); setVol(parseInt(e.target.value, 10) / 100); syncSoundUI(); };
   if (UI.volRange) UI.volRange.oninput = onVol;
   if (UI.volRange2) UI.volRange2.oninput = onVol;
+
+  /* 回到开始页（走查问题 ⑤）：对局中 / 结算页都能一键回到模式选择。
+     必须真的「退出对局」——只把浮层显示出来而不停 G.running，主循环会继续跑，
+     球在浮层背后继续飞、还会继续判分与发声（实测过）。 */
+  if (UI.homeLink) UI.homeLink.onclick = () => {
+    G.running = false; G.paused = false;
+    hideSettle();
+    UI.pauseScreen.classList.add("hidden");
+    UI.posterScreen.classList.add("hidden");
+    UI.endScreen.classList.add("hidden");
+    UI.startScreen.classList.remove("hidden");
+  };
+
+  /* 全屏切换（走查问题 ③）：让用户能主动进出全屏 */
+  if (UI.fsBtn) UI.fsBtn.onclick = () => { audioInit(); toggleFullscreen(); };
+}
+
+/* ==================== 全屏与横屏锁定（走查问题 ③） ====================
+ * 问题：移动端浏览器里从屏幕边缘滑动会拉起系统导航条、下拉会触发刷新，
+ * 两者都会把游戏画面推出视口甚至中断对局。对局本身是高频大幅拖拽操作，
+ * 误触概率极高 —— 必须有「应用视图」级别的锁定。
+ *
+ * API 现实（勿照抄网上通用写法）：
+ *   requestFullscreen()        iOS Safari 上仅 iPad 支持，iPhone 不支持
+ *   screen.orientation.lock()  iOS 完全不支持；Android Chrome 需要先全屏
+ * 所以策略是分级降级：
+ *   ① 尽力请求真全屏（必须在用户手势链内调用，否则被拒）
+ *   ② 全屏成功后再 try 锁方向（失败静默）
+ *   ③ iOS 走 CSS 兜底：100dvh + overscroll-behavior:none + touch-action:none
+ *      （html/body 的这两条已在样式里，这里补 dvh）
+ * 关键约束：被拒后不得反复弹权限询问 —— 用 fsAsked 记住「已经问过」。 */
+const FS = { el: null, asked: false, enabled: false };
+
+function fsElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement
+      || document.mozFullScreenElement || document.msFullscreenElement || null;
+}
+function fsSupported() {
+  const d = document.documentElement;
+  return !!(d.requestFullscreen || d.webkitRequestFullscreen
+         || d.mozRequestFullScreen || d.msRequestFullscreen);
+}
+function syncFsBtn() {
+  if (!UI.fsBtn) return;
+  const on = !!fsElement();
+  FS.enabled = on;
+  UI.fsBtn.classList.toggle("on", on);
+  const tt = UI.fsBtn.querySelector ? UI.fsBtn.querySelector(".tt") : null;
+  if (tt) tt.textContent = on ? "退出全屏" : "全屏";
+  /* 无头测试桩的 mock 元素没有 setAttribute，防御一下（真实 DOM 一定有）。 */
+  if (UI.fsBtn.setAttribute) UI.fsBtn.setAttribute("aria-label", on ? "退出全屏" : "进入全屏");
+}
+/* 进入全屏。必须在用户手势（click/touchend）的同一次调用栈里执行。 */
+function requestFullscreen() {
+  const el = document.documentElement;
+  if (fsElement()) return;                       // 已全屏
+  if (!fsSupported()) return;                    // iOS 浏览器：静默降级到 CSS 兜底
+  FS.asked = true;
+  try {
+    const fn = el.requestFullscreen || el.webkitRequestFullscreen
+            || el.mozRequestFullScreen || el.msRequestFullscreen;
+    const p = fn.call(el, { navigationUI: "hide" });
+    /* 现代浏览器返回 Promise；被拒（用户拒绝/非手势链）时 catch 掉，
+       不弹任何提示 —— 玩家不该为浏览器的权限策略买单。 */
+    if (p && p.catch) p.catch(() => {});
+  } catch (e) {}
+  /* 方向锁定要等真的进入全屏之后再试（Android Chrome 的硬要求）。
+     0ms 宏任务足够让 fullscreenchange 先派发；失败静默交给横屏引导层。 */
+  setTimeout(lockLandscape, 120);
+}
+function exitFullscreen() {
+  const d = document;
+  try {
+    const fn = d.exitFullscreen || d.webkitExitFullscreen
+            || d.mozCancelFullScreen || d.msExitFullscreen;
+    if (fn && fsElement()) { const p = fn.call(d); if (p && p.catch) p.catch(() => {}); }
+  } catch (e) {}
+  try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+}
+function toggleFullscreen() { if (fsElement()) exitFullscreen(); else requestFullscreen(); }
+
+/* 横屏锁定：Android Chrome 可用（需已全屏），iOS 必然抛错 —— 静默吞掉。
+ * 失败不是缺陷：页面自身的横屏引导层 + 按宽高比门控已能兜底（见 isSupported）。 */
+function lockLandscape() {
+  try {
+    const o = screen.orientation;
+    if (o && o.lock) { const p = o.lock("landscape"); if (p && p.catch) p.catch(() => {}); }
+  } catch (e) {}
+}
+
+function bindFullscreen() {
+  ["fullscreenchange","webkitfullscreenchange","mozfullscreenchange","MSFullscreenChange"]
+    .forEach(ev => document.addEventListener(ev, () => {
+      syncFsBtn();
+      /* 退出全屏即自动暂停（走查闭环检查点）：玩家此时很可能是在处理系统弹窗或
+         切了应用，让球继续飞会白丢分。已经是结束页则不动，免得凭空弹暂停层。 */
+      if (!fsElement() && G.running && !G.paused) togglePause();
+    }));
 }
 
 /* ===== 移动端触屏控制簇（Task 7）：替代键盘 Esc/P/R/H/Shift =====
@@ -1174,16 +1278,16 @@ function setupTouchControls() {
   if (!isCoarse()) return;            // 桌面不显示控制簇
   touchCtlOn = true;
   if (UI.hud) UI.hud.classList.add("touch-on");
-  UI.tcPause.onclick = () => { sfx("ui"); togglePause(); syncTouchCtl(); };
-  UI.tcRestart.onclick = () => { if (G.running) { sfx("ui"); restart(); } syncTouchCtl(); };
+  UI.tcPause.onclick = () => { togglePause(); syncTouchCtl(); };
+  UI.tcRestart.onclick = () => { if (G.running) { restart(); } syncTouchCtl(); };
   UI.tcAssist.onclick = () => {
     // 复用 H 键逻辑：挑战模式强制无辅助，不给绕过口子
     if (G.mode === "challenge") {
-      showMsg("挑战模式", "辅助提示不可开启（成绩计入排行榜）", "#ffb454", 1.2, 1, 0); sfx("ui");
-    } else { G.assist = !G.assist; savePrefs(); sfx("ui"); }
+      showMsg("挑战模式", "辅助提示不可开启（成绩计入排行榜）", "#ffb454", 1.2, 1, 0);
+    } else { G.assist = !G.assist; savePrefs(); }
     syncTouchCtl();
   };
-  UI.tcHand.onclick = () => { G.backhand = !G.backhand; sfx("ui"); syncTouchCtl(); };
+  UI.tcHand.onclick = () => { G.backhand = !G.backhand; syncTouchCtl(); };
   syncTouchCtl();
 }
 
@@ -1438,48 +1542,25 @@ function sfxCrowd(kind) {
                   bed: Math.round(bedF.frequency.value), amp: +bedAmp.toFixed(4) };
 }
 
-/* 单声"加油/漂亮"的短呼喝：同样走共振峰合成，但只有一条嗓子、音高更高更短 */
-function sfxYell() {
-  if (!SFX.ready || SFX.mute || !SFX.noise) return;
-  const t = SFX.ac.currentTime + rand(0.02, 0.09);
-  crowdVoice(t, rand(0.42, 0.62), rand(0.030, 0.055), rand(210, 330));
-}
-
+/* 音效白名单（走查问题 ④，2026-09-25 收敛）：
+ * 对局中只允许两种声音 —— ① 玩家击球（hit）② 破纪录欢呼（record）。
+ * 其余音源（发球触拍 / 落台 / 落地 / 挂网 / 完美击球音阶 / 失误钝响 / 升档音 /
+ * 界面点击音 / 零星加油 / 得分时的随机掌声）全部删除。理由：原版每拍要响
+ * 击球+落台+（随机）掌声三层，一局下来听觉信噪比极低；失误音还会在玩家
+ * 已经看到失败原因时再补一刀。扣分反馈改由画面与文案承担，反而更干净。
+ *
+ * 保留 sfxCrowd() 的合成器（破纪录欢呼要用），但不再用于每拍结算。 */
 function sfx(k, v) {
   if (!SFX.ready || SFX.mute) return;
-  if (k === "serve") sfxPaddle(0.30);                 // 对手发球触拍
-  else if (k === "hit") sfxPaddle(v);                 // 玩家击球（力度决定亮度）
-  else if (k === "table") sfxTable(v);                // 球落台
-  else if (k === "floor") sfxFloor();
-  else if (k === "net") sfxNet();
-  else if (k === "good") {                            // 完美击球：上行三度
-    const t = SFX.ac.currentTime;
-    tone(1318, 0.085, "sine", 0.10, null, t);
-    tone(1976, 0.130, "sine", 0.075, null, t + 0.055);
-  }
-  else if (k === "bad") {                             // 失误：下行 + 钝响
-    const t = SFX.ac.currentTime;
-    tone(233, 0.300, "sawtooth", 0.085, 110, t);
-    noiseHit(0.200, 300, 1.0, 0.05, "lowpass", t);
-  }
-  else if (k === "level") {                           // 升档提示
-    const t = SFX.ac.currentTime;
-    [880, 1108, 1318].forEach((f, i) => tone(f, 0.085, "triangle", 0.06, null, t + i * 0.058));
-    sfxCrowd("cheer");
-  }
-  else if (k === "crowd") sfxCrowd(v && v.cheer ? "cheer" : "applause");
-  else if (k === "yell") sfxYell();
-  else if (k === "ui") tone(660, 0.045, "sine", 0.05);
+  if (k === "hit") sfxPaddle(v);                      // 玩家击球（力度决定亮度）
+  else if (k === "record") sfxCrowd("cheer");         // 破纪录：观众欢呼
 }
-/* 观众反应随机化：掌声尾音未落时不再叠一串，但只要上一次已经响过一小段，
- * 下一次一定是全新参数的全新一条——所以「每次都不一样」是可验证的。 */
-function crowdCheer(perfect) {
+/* 破纪录欢呼：只在玩家刷新个人最佳的那一刻响一次（走查问题 ④）。
+ * 原版 crowdCheer() 挂在每一次得分结算上，一局要响十几次，欢呼彻底贬值 ——
+ * 稀缺才有价值，欢呼必须与「突破」绑定。 */
+function recordCheer() {
   if (!SFX.ready || SFX.mute) return;
-  const now = SFX.ac.currentTime;
-  const busy = SFX.crowdAt && now - SFX.crowdAt < 0.55;
-  const want = perfect ? Math.random() < 0.92 : Math.random() < 0.74;
-  if (busy || !want) return;
-  sfxCrowd(perfect && Math.random() < 0.55 ? "cheer" : "applause");
+  sfxCrowd("cheer");
 }
 
 /* ==================== 8. 主循环 ==================== */
@@ -1497,7 +1578,6 @@ function loop(ts) {
     let n = 0;
     while (acc >= DT && n < 20) { update(DT); acc -= DT; n++; }
     if (G.msgT > 0 || G.msgHold > 0 || G.msgQueue.length) tickMsg(frame);
-    if (G.cheerT > 0) G.cheerT -= frame;
     if (G.paddle.anim >= 0) { G.paddle.anim += frame / (G.paddle.dur || 0.34); if (G.paddle.anim > 1) G.paddle.anim = -1; }
     if (G.opp.anim >= 0) { G.opp.anim += frame / 0.34; if (G.opp.anim > 1) G.opp.anim = -1; }
   }
@@ -1516,9 +1596,6 @@ function update(dt) {
     /* spinAmt 由这里按帧刷新（step 里不再算）：它只服务渲染层的贴图自转与旋转箭头，
      * 而 step 会被网格搜索调用几十万次，每步算一次 hypot 纯属浪费。 */
     b.spinAmt = Math.sqrt(b.wx * b.wx + b.wy * b.wy + b.wz * b.wz);
-    if (ev === "table") sfx("table", Math.min(1, Math.abs(vyIn) / 3.2));
-    else if (ev === "floor") sfx("floor");
-    else if (ev === "net") sfx("net");
     const lp = G.trail[G.trail.length - 1];
     if (!lp || Math.hypot(b.x - lp.x, b.y - lp.y, b.z - lp.z) > 0.022) {
       G.trail.push({ x: b.x, y: b.y, z: b.z });
@@ -1532,7 +1609,7 @@ function update(dt) {
       if (G.assist && isCoarse()) G.paddleAngle = correctTiltFor(G.spin);
     } else if (G.phase === "returning") {
       if (!G.nextServeAt && (ev === "table" || ev === "floor" || b.z < -2.2)) {
-        const gain = finalizePoint();         // 这一拍落定 → 结算落点得分（含观众反应）
+        const gain = finalizePoint();         // 这一拍落定 → 结算落点得分
         /* 海报抓帧：只认「球击中对手球桌」的那一瞬间（落点在网另一侧）。
          * 真正的抓图放到 render3D 末尾执行——那时这一帧已经画完，
          * 画面上正好是球压在对方台面上的样子。 */
@@ -2037,13 +2114,14 @@ function restart() {
   G.msgPri = 0; G.msgHold = 0; G.msgQueue.length = 0;   // 清掉上一局排队的提示
   hideSettle();
   G.paddleAngle = 0; G.trail.length = 0;
-  G.score = 0; G.goodStreak = 0; G.landErr = null; G.pending = null; G.cheerT = 0;
+  G.score = 0; G.goodStreak = 0; G.landErr = null; G.pending = null;
   G.paddle.anim = -1; G.paddle.pend = 0; G.mark = null;
   G.shots = []; G.shotReq = null; G.ghosts.length = 0;
   G.statSpinTotal = 0; G.statSpinHit = 0; G.statErrSum = 0; G.statErrN = 0; G.statMaxSpeed = 0;
   G.failTotal = 0; G.failStats = {}; G.goodTotal = 0;   // 本局失败归因与精准拍数清零
   G.best = loadBest();                        // 按当前模式取最佳（模式可能刚被切换）
   G.bestAtStart = G.best;                     // 快照：用来算「距个人最佳还差 N 球」
+  G.recordCheered = false;                    // 本局的「破纪录欢呼」哨兵，只允许响一次
   G.prevBestScore = loadBestScore();          // 「上次成绩」= 上一局的得分纪录
   UI.startScreen.classList.add("hidden");
   UI.endScreen.classList.add("hidden");
@@ -2108,11 +2186,20 @@ function renderModeTag() {
 
 /* 「距个人最佳还差 N 球」—— 把「我到底有没有进步」变成一个具体数字。
  * G.best 会在打出新纪录的瞬间就被刷新（HUD 要实时显示），到结束页时已无从
- * 判断本局是否破纪录，所以用开局快照 G.bestAtStart 做对比。 */
+ * 判断本局是否破纪录，所以用开局快照 G.bestAtStart 做对比。
+ *
+ * base<=0 有两种含义，必须分开处理（走查问题 ⑦）：
+ *   base<=0 且 cur>0  → 本模式真的还没有纪录，本局就是首个记录；
+ *   base<=0 且 cur==0 → 本局 0 拍。0 拍不是纪录，写「首个纪录：0 拍」是伪成就，
+ *                       还会跟紧邻的「不计入排行榜」自相矛盾。此时给鼓励文案。 */
 function renderGap() {
   const el = UI.endGap; if (!el) return;
   const base = G.bestAtStart, cur = G.rally;
-  if (base <= 0) {
+  if (base <= 0 && cur <= 0) {
+    /* 练习模式的 best 恒为 0（不计榜），所以这条路是练习模式的常规分支 */
+    el.textContent = isRanked() ? "还没有成绩 —— 先打中第一拍" : "本局未得分 —— 先打中第一拍";
+    el.classList.remove("isNew");
+  } else if (base <= 0) {
     el.innerHTML = "本模式首个纪录：<b>" + cur + "</b> 拍";
     el.classList.add("isNew");
   } else if (cur > base) {
@@ -2160,29 +2247,69 @@ function renderFailBreakdown() {
 }
 
 /* 历史前十（仅挑战模式）。本局在榜内则高亮。
- * 无历史时整块不渲染 —— 宁可不显示，也不要给玩家一张空表。 */
+ * 无历史时整块不渲染 —— 宁可不显示，也不要给玩家一张空表。
+ *
+ * 名次口径（走查问题 ⑥）：原实现直接用行号 i+1 当名次，于是同分的两局被排成
+ * 第 1、2 名 —— 玩家看到「同样是 1 分，凭什么排我后面」。改为 DENSE_RANK：
+ * 同分同名次，下一档名次顺延（1,1,2… 而非 1,1,3…），符合「排行榜」的直觉。 */
+function denseRank(scores) {
+  const out = new Array(scores.length);
+  let rank = 0, prev = null;
+  for (let i = 0; i < scores.length; i++) {
+    if (prev === null || scores[i] !== prev) { rank++; prev = scores[i]; }
+    out[i] = rank;
+  }
+  return out;
+}
+
+/* 练习模式右栏（走查问题 ⑧）：拆栏后若只放一句引导，右栏会大片留白。
+ * 改为「本局 vs 个人最佳」对照 —— 练习模式虽不计榜，但仍然有可比的纵向基准，
+ * 把这块空间变成真正有用的复盘。 */
+function renderPracticeCompare() {
+  const h = [];
+  const best = G.bestAtStart;
+  h.push('<div class="cmpRow now"><span>本局</span><em>' + G.rally + ' 拍</em><em>' + G.score + ' 分</em></div>');
+  if (best > 0) {
+    h.push('<div class="cmpRow"><span>个人最佳（同模式）</span><em>' + best + ' 拍</em><em>—</em></div>');
+    const d = G.rally - best;
+    const cls = d > 0 ? "up" : (d < 0 ? "down" : "");
+    const txt = d > 0 ? "+" + d + " 拍" : (d < 0 ? d + " 拍" : "追平");
+    h.push('<div class="cmpRow delta"><span>差距</span><em class="' + cls + '">' + txt + '</em></div>');
+  }
+  h.push('<div class="cmpNote">练习模式开着辅助提示，成绩不计入排行榜。<br>'
+       + '熟悉球路后切到 <b>挑战模式</b>，看看你能排第几。</div>');
+  return h.join("");
+}
+
 function renderBoard(rec, recs) {
-  const wrap = UI.boardWrap, list = UI.boardList;
+  const wrap = UI.boardWrap, list = UI.boardList, head = UI.boardHead;
   if (!wrap || !list) return;
   if (!isRanked()) {
-    /* 练习模式不列榜，改为一句引导：这是「邀请玩家进挑战模式」的最低成本做法，
-     * 比让玩家自己在两个模式之间猜要好。 */
+    /* 练习模式：右栏改为对照卡（不再是空榜 + 一句引导） */
     wrap.style.display = "";
-    if (UI.boardTitle) UI.boardTitle.textContent = "练习模式不计入排行榜";
-    list.innerHTML = '<div class="boardEmpty">辅助提示可以看清旋转，'
-      + '但成绩不进榜。<br>熟悉球路后切到 <b>挑战模式</b>，看看你能排第几。</div>';
+    if (UI.boardTitle) UI.boardTitle.textContent = "本局对照";
+    if (head) { head.className = "cmp"; head.style.gridTemplateColumns = "1fr 84px 84px";
+      head.innerHTML = '<span>维度</span><span>连续回球</span><span>得分</span>'; }
+    list.innerHTML = renderPracticeCompare();
     return;
   }
   const h = (recs && recs.history) || [];
   if (!h.length) { wrap.style.display = "none"; return; }
   wrap.style.display = "";
   if (UI.boardTitle) UI.boardTitle.textContent = "挑战模式 · 历史前十局";
+  if (head) { head.className = "bd"; head.style.gridTemplateColumns = "26px 62px 1fr 62px";
+    head.innerHTML = '<span>名次</span><span>得分</span><span>拍 · 准 · 档</span><span>时间</span>'; }
+
+  const ranks = denseRank(h.map(function (e) { return e.score; }));
   let html = "";
   for (let i = 0; i < h.length; i++) {
     const e = h[i];
     const isCur = e.ts === rec.ts;                // 本局（ts 由 Date.now() 生成，唯一）
-    html += '<div class="bdRow' + (isCur ? " isCur" : "") + '">'
-          + '<span class="bdRank num">' + (i + 1) + '</span>'
+    /* 并列：与相邻行同分即标记，名次字用弱色，避免玩家误以为「名次漏排了」 */
+    const tied = (i > 0 && h[i - 1].score === e.score)
+              || (i + 1 < h.length && h[i + 1].score === e.score);
+    html += '<div class="bdRow' + (isCur ? " isCur" : "") + (tied ? " isTie" : "") + '">'
+          + '<span class="bdRank num">' + ranks[i] + '</span>'
           + '<span class="bdMain num">' + e.score + ' 分</span>'
           + '<span class="bdSub">' + e.rally + ' 拍 · ' + e.good + ' 准 · ' + e.level + ' 档</span>'
           + '<span class="bdTime">' + fmtStamp(e.ts) + '</span>'
@@ -2271,6 +2398,8 @@ function boot() {
   }
   setupInput();
   setupTouchControls();                 // 触屏控制簇：仅粗指针下显示（Task 7）
+  bindFullscreen();                     // 全屏状态监听 + 退出全屏自动暂停（问题 ③）
+  syncFsBtn();                          // 图标与 tooltip 按当前全屏态初始化
   applySupportGate();                   // P2：初始设备/方向门控（引导层显隐）
   requestAnimationFrame(loop);
 }

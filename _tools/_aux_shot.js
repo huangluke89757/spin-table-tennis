@@ -106,7 +106,24 @@ const MEASURE = () => {
     });
     await p.waitForTimeout(150);
 
-    // ---- 展开态 ----
+    // ---- 初始态：辅助面板一律默认收起（2026-09-25 走查改造，用户红框确认）----
+    // 旧脚本假定开局是展开态，改造后方向全反；这里先钉死「默认收起」这个新契约，
+    // 再显式点开，后面的展开 / 收起 / 可逆三段才能按各自真实状态断言。
+    const init = await p.evaluate(() => ({
+      collapsed: document.getElementById("hud").classList.contains("ui-collapsed"),
+      keysShown: getComputedStyle(document.getElementById("hudKeys")).display !== "none",
+      faceShown: getComputedStyle(document.getElementById("hudFace")).display !== "none",
+      cfgShown: getComputedStyle(document.getElementById("cfgBody")).display !== "none",
+      txt: document.getElementById("uiToggleTxt").textContent
+    }));
+    add(init.collapsed && !init.keysShown && !init.faceShown && !init.cfgShown,
+        "★默认收起（拍面栏 / 操作说明 / 音效栏开局都不占击球区）",
+        "collapsed=" + init.collapsed + " 说明=" + init.keysShown + " 拍面栏=" + init.faceShown +
+        " 音效栏=" + init.cfgShown + " 文案=「" + init.txt + "」");
+
+    // ---- 展开态：点一次展开，再测量 ----
+    await p.evaluate(() => document.getElementById("btnUiToggle").click());
+    await p.waitForTimeout(350);
     const open = await p.evaluate(MEASURE);
     console.log("\n[" + w + "×" + h + "] 展开态");
     add(open.pairs.every(x => x.px === 0), "右下辅助面板内部各块互不重叠",

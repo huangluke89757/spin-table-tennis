@@ -336,7 +336,16 @@ const INSTALL = () => {
     ok("桌面 → 触屏控制簇隐藏（不出现冗余按钮）", r.ctlDisplay === "none", "display=" + r.ctlDisplay);
     ok("桌面 → #hud 不带 touch-on", r.hudTouchOn === false);
     ok("桌面 → 引导层永不显示", r.hintOn === false);
-    ok("桌面 → 键盘操作说明仍可见（未被粗指针规则误伤）", r.keysVisible === true);
+    /* 2026-09-25 走查改造：辅助面板「一律默认收起」是全局策略，桌面也不例外，
+     * 所以这里不再是「说明可见」。但原断言要防的是「桌面被粗指针规则误伤后
+     * 再也打不开」—— 那条防线改为：点一下必须能展开。 */
+    ok("桌面 → 辅助面板同样默认收起（全局默认，非仅移动端）", r.keysVisible === false,
+       "keysVisible=" + r.keysVisible);
+    const deskOpen = await page.evaluate(() => {
+      document.getElementById("btnUiToggle").click();
+      return getComputedStyle(document.getElementById("hudKeys")).display !== "none";
+    });
+    ok("桌面 → 点开后操作说明可见（开关未被粗指针规则锁死）", deskOpen === true);
     ok("桌面 → 对局正常启动", r.running === true);
     await ctx.close();
   }

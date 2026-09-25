@@ -7,7 +7,10 @@ const path = require("path");
  * ROOT 定位游戏本体与产物（game.js / index.html / _shots），TOOLS 定位同级脚本。 */
 const ROOT = path.join(__dirname, "..");
 const TOOLS = __dirname;
-const src = fs.readFileSync(ROOT + "/game.js", "utf8");
+/* game.js 在 Windows 上是 CRLF，而下面「还原旧内核」用的是硬编码 LF 多行串做精确
+ * 替换 —— 行尾一旦是 \r\n 就永远匹配不上，会误报「还原旧内核失败，脚本需更新」。
+ * 这里统一归一化成 LF，让匹配只关心代码内容、不关心行尾。 */
+const src = fs.readFileSync(ROOT + "/game.js", "utf8").replace(/\r\n/g, "\n");
 const NEW = src.slice(src.indexOf("/* ==================== 1."), src.indexOf("/* ==================== 3."));
 
 if (process.argv.indexOf("--compare") >= 0) {

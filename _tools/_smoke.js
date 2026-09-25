@@ -201,10 +201,18 @@ G_("scene", () => { if (!THREE_OK) __ERR.push("场景构建失败: " + UI.errMsg
 /* ---------- 音效链路：每种事件都必须真的创建音源 ---------- */
 const SFXLOG = {};
 audioInit();
-["serve","hit","table","floor","net","good","bad","level","ui"].forEach(k => {
+/* 2026-09-25 音效收敛：白名单只剩 hit / record。
+ * 这里同时验两件事：① 白名单内的必须发声；② 被删掉的旧音源即使被调用也必须**静默**
+ * （sfx() 是白名单分发，未知 key 不落任何分支 —— 用静默断言防止有人误加回分支）。 */
+["hit","record"].forEach(k => {
   const before = __AUDIO_started();
   sfx(k, 0.7);
   SFXLOG[k] = __AUDIO_started() - before;
+});
+["serve","table","floor","net","good","bad","level","ui","yell","crowd"].forEach(k => {
+  const before = __AUDIO_started();
+  sfx(k, 0.7);
+  SFXLOG[k] = __AUDIO_started() - before;      // 必须为 0
 });
 
 /* ---------- 观众声：必须发声，且每次参数都不同 ----------
@@ -237,12 +245,7 @@ const CHEER_M = (() => {
   return { osc: osc, hi: hiN, filters: filters.length };
 })();
 
-/* 单声喝彩也要有人声振荡器 */
-const YELL_OSC = (() => {
-  const before = __AUD_OSC();
-  sfxYell();
-  return __AUD_OSC() - before;
-})();
+/* 单声喝彩（sfxYell）已随音效收敛删除，不再测量 */
 
 /* 球馆底噪必须高通掉低频：查 game.js 源码里底噪链是否含 highpass。
  * 这条在 Node 侧算——沙箱里拿不到 code 变量。 */
@@ -443,7 +446,7 @@ CLASS.aux = AUX;
 
 CLASS.crowd = CROWD_FP; CLASS.crowdUnique = CROWD_UNIQUE;
 CLASS.cheerVoices = CHEER_M.osc; CLASS.cheerOsc = CHEER_M.osc;
-CLASS.cheerHiFormant = CHEER_M.hi; CLASS.yellOsc = YELL_OSC;
+CLASS.cheerHiFormant = CHEER_M.hi;
 
 CLASS.spinny = SPINNY; CLASS.dist = DIST; CLASS.easyBad = EASY_BAD;
 CLASS.tAvg = T_AVG; CLASS.tMin = tMin; CLASS.tMax = tMax; CLASS.tByType = T_BYTYPE;
@@ -596,6 +599,10 @@ G_("end-practice", () => {
   gameOver("没打到球");
   ENDS.pTag = els.endMode.textContent;
   ENDS.pBoardEmpty = els.boardList.innerHTML.indexOf("boardEmpty") >= 0;
+  /* 2026-09-25 走查改造：练习模式右栏不再是一句引导（拆栏后会大片留白），
+   * 改为「本局 vs 个人最佳」对照卡。bestAtStart=10 > 0，应有本局/最佳/差距三行。 */
+  ENDS.pCmpRows = (els.boardList.innerHTML.match(/cmpRow/g) || []).length;
+  ENDS.pCmpNote = els.boardList.innerHTML.indexOf("cmpNote") >= 0;
 });
 CLASS.endBlocks = ENDS;
 
@@ -718,9 +725,13 @@ add(CK.crowd.every(x => x.n >= 40), "每次掌声都真的发声（≥40 个音�
 
 /* ---------- 辅助面板显隐 ---------- */
 const AX = CK.aux;
-add(AX[0] === false, "默认展开辅助面板（拍面栏 + 音效配置 + 操作说明）",
+/* 2026-09-25 走查改造（用户红框确认）：辅助面板**一律默认收起**，
+ * 只保留展开按钮 —— 开局不再让拍面栏/操作说明/音效栏占住击球走廊。 */
+add(AX[0] === true, "★默认收起辅助面板（拍面栏 + 音效配置 + 操作说明）",
     "初始 ui-collapsed=" + AX[0]);
-add(AX[1] === true && AX[3] === false && AX[5] === true,
+/* 从「默认收起」出发，三条入口依次把状态翻转：收起→展开→收起→展开。
+ * 关键不是终值是 true 还是 false，而是**每一次点击都真的翻转了**。 */
+add(AX[1] === false && AX[3] === true && AX[5] === false,
     "三条入口都能切换显隐（Tab 键 / HUD 按钮 / 结束页按钮）",
     "Tab→" + AX[1] + "（" + AX[2] + "）　HUD 按钮→" + AX[3] + "（" + AX[4] + "）　结束页→" + AX[5] + "（" + AX[6] + "）");
 /* 用户要求：左下拍面栏与右下辅助区必须同一个开关一起收放。
@@ -729,9 +740,17 @@ const CR = HTML.replace(/\n\s*/g, " ");
 add(/ui-collapsed\s+#hudFace/.test(CR) && /ui-collapsed\s+#hudKeys/.test(CR),
     "一个开关同时收起左下拍面栏与右下辅助区",
     "规则：" + CK.collapseRule);
-add(!/ui-collapsed[^{]*#btnUiToggle[^{]*\{/.test(CR) && !/ui-collapsed[^{]*#hudCfg[^{]*\{/.test(CR),
+/* 注意：收起态确实存在 #btnUiToggle / #hudCfg 的样式规则（收起后配色变淡、内距收紧），
+ * 但它们**不能**是 display:none —— 否则收起了就再也点不开。
+ * 所以判据是"规则体里没有 display:none"，而不是"规则不存在"。 */
+const ruleBody = id => {
+  const m = CR.match(new RegExp("ui-collapsed[^{]*#" + id + "[^{]*\\{([^}]*)\\}"));
+  return m ? m[1] : "";
+};
+add(!/display\s*:\s*none/.test(ruleBody("btnUiToggle"))
+ && !/display\s*:\s*none/.test(ruleBody("hudCfg")),
     "收起规则不藏开关按钮与配置面板本体（收起了也点得开）",
-    "btnUiToggle 与 hudCfg 均不在收起名单");
+    "两条规则只改配色/内距，均未设 display:none");
 
 /* ---------- 观众欢呼音质：必须是"人声共振峰"，不能是低频轰鸣 ----------
  * 根因：旧版用 480~1150Hz 带通噪声当人声 → 只剩低频"轰轰"。
@@ -744,8 +763,8 @@ add(CK.cheerHiFormant >= 18, "欢呼含 2.4kHz 以上高共振峰（人声明亮
     "F3 共振峰 " + CK.cheerHiFormant + " 个（≥2.4kHz）");
 add(CK.roomHighpass, "球馆底噪已高通切掉 220Hz 以下低频（消除持续\"轰轰\"）",
     "底噪链含 highpass 滤波器");
-add(CK.yellOsc >= 1, "单声喝彩同样走人声合成",
-    "sfxYell 创建振荡器 " + CK.yellOsc + " 个");
+/* 「单声喝彩」(sfxYell) 已随 2026-09-25 音效收敛删除：
+ * 只保留玩家击球声与破纪录欢呼，零星加油/掌声一并去掉，故此处不再断言。 */
 
 /* ---------- 本轮六项需求专项 ---------- */
 
@@ -913,8 +932,9 @@ add(EB.rows === 3 && EB.hasTop && (EB.main || "").indexOf("吃旋转") >= 0,
     "结束页 · 失败构成按次数降序，主要问题取次数最多的一项",
     EB.rows + " 行　" + (EB.main || ""));
 add(EB.board && EB.cur, "结束页 · 历史榜渲染且本局条目高亮", "榜单有行 + isCur 标记");
-add((EB.pTag || "").indexOf("练习模式") >= 0 && EB.pBoardEmpty,
-    "结束页 · 练习模式不列榜，改为引导切挑战模式", EB.pTag || "");
+add((EB.pTag || "").indexOf("练习模式") >= 0 && EB.pCmpRows >= 3 && EB.pCmpNote && !EB.pBoardEmpty,
+    "结束页 · 练习模式不列榜，改为「本局 vs 个人最佳」对照卡（不再空榜）",
+    (EB.pTag || "") + "　对照 " + EB.pCmpRows + " 行，引导语 " + (EB.pCmpNote ? "有" : "无"));
 
 /* ⑥ 右上角外链（查源码，不查沙箱桩） */
 const ghIdx = HTML.indexOf('<div id="topLinks">');
@@ -956,7 +976,15 @@ if (R.errs.length) {
   R.errs.forEach(e => { const k = e.slice(0, 110); if (!seen.has(k)) { seen.add(k); console.log("  - " + e); } });
   process.exit(1);
 }
-const silent = Object.entries(R.sfx).filter(([, v]) => v === 0).map(([k]) => k);
-if (silent.length) { console.log("\n失败：以下音效未发声: " + silent.join(", ") + "\n"); process.exit(1); }
+/* 2026-09-25 音效收敛后要双向验：
+ *   白名单（hit 击球 / record 破纪录欢呼）**必须发声**；
+ *   被删掉的旧音源**必须静默** —— 否则有人误把分支加回来，玩家又听到一堆杂音。
+ * 单向的「未发声即失败」会把「该静默的静默了」误判成失败，所以这里拆成两条。 */
+const MUST_SOUND  = ["hit", "record"];
+const MUST_SILENT = ["serve", "table", "floor", "net", "good", "bad", "level", "ui", "yell", "crowd"];
+const silent = MUST_SOUND.filter(k => !(R.sfx[k] > 0));
+const noisy  = MUST_SILENT.filter(k => R.sfx[k] !== 0);
+if (silent.length) { console.log("\n失败：白名单音效未发声: " + silent.join(", ") + "\n"); process.exit(1); }
+if (noisy.length)  { console.log("\n失败：已删除音效仍在发声: " + noisy.join(", ") + "\n"); process.exit(1); }
 if (avg < 8) { console.log("\n失败：正确操作平均仅 " + avg.toFixed(1) + " 拍，玩法不可玩\n"); process.exit(1); }
 console.log("\n冒烟测试通过：场景构建 + 6 局自动对局 + 音效链路 + 全部渲染分支，无运行时错误\n");
