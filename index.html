@@ -264,7 +264,8 @@
               background:rgba(255,255,255,0.04); border:1px solid var(--line);
               border-radius:var(--r); padding:10px 16px; margin-bottom:6px; }
   /* 结束页的辅助面板开关：与 .settings 同款外观，放在按钮行下方 */
-  #endUiRow { display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted);
+  #endUiRow { display:flex; align-items:center; justify-content:center; gap:10px;
+              font-size:12px; color:var(--muted);
               background:rgba(255,255,255,0.04); border:1px solid var(--line);
               border-radius:var(--r); padding:8px 16px; margin-top:14px; }
 
@@ -462,6 +463,27 @@
     #endRight { flex:1 1 auto; padding:8px 16px 10px; }
   }
 
+  /* ===== 结束页：宽屏「主体内容居中」（2026-09-26 第二轮走查） =====
+     分栏只把纵向压力转成横向，却没给横向设边界。1080px 窗口实测：
+     左栏文字贴屏幕左边缘（x=0），右栏 1fr 列被撑到 577px ——
+     「27 拍 · 0 准 · 1 档」挤在中间，时间列被顶到屏幕最右（x=992），
+     练习模式的「本局」标签与数值之间隔了 566px 空白。主体内容因此散落到四角。
+     两层解法，缺一不可：
+       ① 侧轴由 stretch 改 center：两栏各自收缩到内容高、整体上下居中，
+          不再一头顶屏幕顶、一头贴屏幕底（左栏按钮原先被 margin-top:auto
+          顶到底边，正是「散在四周」的纵向那一半）；间距交给 gap。
+       ② 右栏宽度收到 380px：这是唯一必须变窄的地方 ——
+          只有它变窄，1fr 才不会替时间列吸收掉几百 px 空白，
+          列与列才能重新挨在一起（表的 4 列本身不动）。
+     窄横屏（≤620px）走上面的纵向兜底，行为一行未改。
+     注：中心对齐在内容超高时会把两头顶出视口且滚不回来，所以两栏都挂
+     max-height:100% 由容器自己收口，内部滚动（#endLeft / #boardScroll）照旧。 */
+  @media(min-width:621px){
+    #endScreen { align-items:center; justify-content:center; gap:26px; }
+    #endLeft, #endRight { max-height:100%; }
+    #endRight { flex:0 1 380px; max-width:380px; padding:14px 16px 12px; }
+  }
+
   /* ===== 结束页：模式标签 / 进步幅度 / 失败构成 / 历史榜 ===== */
   .modeTag { font-size:11.5px; font-weight:700; letter-spacing:0.6px;
              padding:3px 12px; border-radius:20px; margin-bottom:11px; }
@@ -509,7 +531,10 @@
                border-bottom:1px solid var(--line); margin-bottom:4px; }
   #boardHead.bd span:last-child { text-align:right; }
   #boardHead.cmp span:not(:first-child) { text-align:right; }
-  .bdRow { display:grid; grid-template-columns:26px 62px 1fr 62px; align-items:center;
+  /* 末列 70px 而不是 62px：「09-26 15:10」实测需要 63px —— 差这 1px 会让
+     每个时间戳折成两行，行高从 22px 涨到 38px，10 行白吃 160px 竖向空间，
+     而竖向正是手机横屏最缺的（293~380px）。列名与行共用同一套模板，不会错位。 */
+  .bdRow { display:grid; grid-template-columns:26px 62px 1fr 70px; align-items:center;
            gap:9px; padding:5px 8px; border-radius:6px; font-size:12.5px;
            color:var(--muted); }
   .bdRow.isCur { background:rgba(255,180,84,0.13); color:var(--fg);

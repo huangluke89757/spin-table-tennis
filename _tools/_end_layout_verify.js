@@ -10,12 +10,15 @@
  *   ⑥ 历史榜并列得分同名次（DENSE_RANK）
  *   ⑦ 练习模式不再出现「首个纪录：0 拍」
  *   ⑧ 练习模式右栏改为对照卡（不再空榜）
+ *   ⑨ 宽屏主体内容居中（2026-09-26 第二轮走查）—— 两栏整体水平/垂直居中，
+ *     右栏收窄到 380px，表格中间列不再替「时间」列吸收掉几百 px 空白
  *
  * 核心断言（最容易被改坏的）：
  *   · #againBtn 在**任何**横屏高度下都完整落在视口内（本轮要修的主症）
  *   · 左栏不产生滚动（scrollHeight <= clientHeight + 1）
  *   · 右栏榜体可独立滚动且不把整页撑出视口
  *   · 覆盖层自身不产生整页滚动（overlay.scrollHeight 不超出）
+ *   · 宽屏下两侧留白对称（内容居中，不贴屏幕边缘、不散到四周）
  * ========================================================================== */
 const path = require("path");
 const { chromium } = require("playwright");
@@ -183,11 +186,18 @@ const MAKE_END = (mode, ties) => `(() => {
   await page.waitForTimeout(280);
   const ch = await page.evaluate(() => {
     const rows = document.querySelectorAll("#boardList .bdRow");
+    const head = document.getElementById("boardHead");
+    const row0 = rows[0], time = row0 && row0.querySelector(".bdTime");
     return {
       ranks: [].map.call(rows, r => (r.querySelector(".bdRank") || {}).textContent.trim()),
       scores: [].map.call(rows, r => (r.querySelector(".bdMain") || {}).textContent.trim()),
-      head: (document.getElementById("boardHead") || {}).textContent.replace(/\s+/g, " ").trim(),
-      headCols: (document.getElementById("boardHead") || {}).style.gridTemplateColumns,
+      head: (head || {}).textContent.replace(/\s+/g, " ").trim(),
+      /* 表头模板由 JS 写、行模板在 CSS 里，两处都是「写死的数字」——
+       * 比字符串只能证明没改过其中一处，比**计算值**才能证明两者真的没分歧。 */
+      headCols: head ? getComputedStyle(head).gridTemplateColumns : "",
+      rowCols: row0 ? getComputedStyle(row0).gridTemplateColumns : "",
+      rowH: row0 ? Math.round(row0.getBoundingClientRect().height) : 0,
+      timeH: time ? Math.round(time.getBoundingClientRect().height) : 0,
       tieRows: document.querySelectorAll("#boardList .bdRow.isTie").length,
     };
   });
@@ -200,8 +210,14 @@ const MAKE_END = (mode, ties) => `(() => {
       "标记 " + ch.tieRows + " 行（5 分两行 + 1 分三行）");
   add(/名次/.test(ch.head) && /时间/.test(ch.head), "表头在滚动区之外且列名完整",
       "表头「" + ch.head + "」");
-  add(ch.headCols === "26px 62px 1fr 62px", "表头与数据行列宽一致（不错位）",
-      "grid-template-columns=" + ch.headCols);
+  add(ch.headCols === ch.rowCols && /70px/.test(ch.headCols),
+      "★表头与数据行模板逐列一致（不错位）",
+      "表头 " + ch.headCols + "　行 " + ch.rowCols);
+  /* 「09-26 15:10」实测需 63px，旧列宽 62px 只差 1px 就折成两行 ——
+   * 行高从 22px 涨到 38px，10 行白吃 160px 竖向空间。这一条锁死末列宽度。 */
+  add(ch.timeH <= 20 && ch.rowH <= 30,
+      "★时间戳不折行（末列 70px ≥ 实测 63px）",
+      "行高 " + ch.rowH + "px / 时间格高 " + ch.timeH + "px（折行时为 38/28）");
 
   /* 练习模式：0 拍不得出现「首个纪录」，右栏应有对照卡 */
   await page.evaluate(`(() => {
@@ -330,6 +346,68 @@ const MAKE_END = (mode, ties) => `(() => {
       "开始后 running=" + homeAct.runningAfterStart + "，点主页后 running=" + homeAct.runningAfterHome);
   add(homeAct.startVis && homeAct.endVis === false, "回到开始页后落回模式选择页",
       "startScreen 可见=" + homeAct.startVis);
+
+  /* ---------- 宽屏「主体内容居中」（2026-09-26 第二轮走查）----------
+   * 上一轮只把纵向压力转成横向，却没给横向设边界：1080px 窗口里左栏贴屏幕左边缘、
+   * 右栏 1fr 列被撑到 577px，时间列被顶到屏幕最右 —— 主体内容散落到四角。
+   * 这一节把「居中」变成可量化的不变量，四个数缺一不可：
+   *   两侧留白对称（水平居中）· 右栏不吃满（有宽度上限）
+   *   弹性列不吃空白（列与列挨在一起）· 上下留白对称（垂直居中）
+   * 用「用户截图那种宽而矮的窗口 + 桌面」两种形状，两种模式各验一遍。 */
+  console.log("\n=== 宽屏主体内容居中（1030×469 / 1280×720）===");
+  for (const wc of [{ n: "1030×469", w: 1030, h: 469 }, { n: "1280×720", w: 1280, h: 720 }]) {
+    for (const mode of ["challenge", "practice"]) {
+      const ctx2 = await browser.newContext({
+        viewport: { width: wc.w, height: wc.h }, deviceScaleFactor: 1,
+        isMobile: true, hasTouch: true,
+      });
+      const p2 = await ctx2.newPage();
+      const errs2 = [];
+      p2.on("pageerror", e => errs2.push(e.message));
+      await p2.goto(URL, { waitUntil: "load" });
+      await p2.waitForTimeout(1400);
+      await p2.evaluate(MAKE_END(mode, mode === "challenge"));
+      await p2.waitForTimeout(300);
+
+      const g = await p2.evaluate(() => {
+        const B = e => e.getBoundingClientRect();
+        const L = B(document.getElementById("endLeft"));
+        const Rt = B(document.getElementById("endRight"));
+        const head = document.getElementById("boardHead");
+        /* gridTemplateColumns 的计算值已解析成 px，直接取出「弹性那一列」——
+         * 挑战模式是第 3 列（1fr，原被撑到 577px），练习模式是第 1 列（1fr 标签列）。 */
+        const cols = getComputedStyle(head).gridTemplateColumns.split(" ").map(parseFloat);
+        const ranked = document.getElementById("boardHead").className.indexOf("bd") >= 0;
+        return {
+          leftGap: Math.round(L.left),
+          rightGap: Math.round(innerWidth - Rt.right),
+          colGap: Math.round(Rt.left - L.right),
+          rightW: Math.round(Rt.width),
+          topGap: Math.round(Math.min(L.top, Rt.top)),
+          botGap: Math.round(innerHeight - Math.max(L.bottom, Rt.bottom)),
+          flexCol: Math.round(ranked ? cols[2] : cols[0]),
+          boardOverflow: (() => { const h = document.getElementById("boardHead");
+            return h.scrollWidth - h.clientWidth; })(),
+        };
+      });
+      const tag = mode === "challenge" ? "挑战" : "练习";
+      add(Math.abs(g.leftGap - g.rightGap) <= 2,
+          "★两栏水平居中（两侧留白对称）", wc.n + " " + tag + "：左 " + g.leftGap +
+          " / 右 " + g.rightGap);
+      add(g.leftGap >= 24, "内容不贴屏幕边缘", "左留白 " + g.leftGap + "px");
+      add(g.rightW <= 420, "★右栏不再吃满剩余宽度（≤420px）",
+          "右栏 " + g.rightW + "px（收窄前 1080px 窗口下为 792px）");
+      add(g.flexCol <= 240, "★表格弹性列不再吸收空白（≤240px，列与列挨在一起）",
+          "弹性列 " + g.flexCol + "px（收窄前为 577px）");
+      add(Math.abs(g.topGap - g.botGap) <= 3, "主内容块垂直居中（上下留白对称）",
+          "上 " + g.topGap + " / 下 " + g.botGap + "（视口高 " + wc.h + "）");
+      add(g.colGap >= 12, "两栏之间有明确间距（不贴在一起）", "栏间距 " + g.colGap + "px");
+      add(g.boardOverflow <= 1, "收窄后榜体不横向溢出（时间列不被裁掉）",
+          "溢出 " + g.boardOverflow + "px");
+      add(errs2.length === 0, "无页面错误", errs2.slice(0, 2).join(" | "));
+      await ctx2.close();
+    }
+  }
 
   add(errs.length === 0, "无页面错误", errs.slice(0, 2).join(" | "));
   await page.screenshot({ path: path.join(OUT, "52_end_logic.png") });

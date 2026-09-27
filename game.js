@@ -2297,7 +2297,9 @@ function renderBoard(rec, recs) {
   if (!h.length) { wrap.style.display = "none"; return; }
   wrap.style.display = "";
   if (UI.boardTitle) UI.boardTitle.textContent = "挑战模式 · 历史前十局";
-  if (head) { head.className = "bd"; head.style.gridTemplateColumns = "26px 62px 1fr 62px";
+  /* 末列 70px：与 .bdRow 的模板保持一致。「09-26 15:10」实测需要 63px，
+     差 1px 就会折成两行、把行高从 22px 抬到 38px（10 行白吃 160px 竖向空间）。 */
+  if (head) { head.className = "bd"; head.style.gridTemplateColumns = "26px 62px 1fr 70px";
     head.innerHTML = '<span>名次</span><span>得分</span><span>拍 · 准 · 档</span><span>时间</span>'; }
 
   const ranks = denseRank(h.map(function (e) { return e.score; }));
